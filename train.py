@@ -6,6 +6,7 @@ import argparse
 import datetime
 import os
 import traceback
+import psutil
 
 import numpy as np
 import torch
@@ -109,7 +110,7 @@ def train(opt):
                   'collate_fn': collater,
                   'num_workers': opt.num_workers}
 
-    input_sizes = [512, 640, 768, 896, 1024, 1280, 1280, 1536, 1536]
+    input_sizes = [512, 640, 768, 896, 1024, 1280, 1280, 1536, 1356]
     training_set = CocoDataset(root_dir=os.path.join(opt.data_path, params.project_name), set=params.train_set,
                                transform=transforms.Compose([Normalizer(mean=params.mean, std=params.std),
                                                              Augmenter(),
@@ -252,7 +253,7 @@ def train(opt):
                     step += 1
 
                     if step % opt.save_interval == 0 and step > 0:
-                        save_checkpoint(model, f'efficientdet-d{opt.compound_coef}_{epoch}_{step}.pth')
+                        #save_checkpoint(model, f'efficientdet-d{opt.compound_coef}_{epoch}_{step}.pth')
                         print('checkpoint...')
 
                 except Exception as e:
@@ -300,7 +301,10 @@ def train(opt):
                     best_loss = loss
                     best_epoch = epoch
 
-                    save_checkpoint(model, f'efficientdet-d{opt.compound_coef}_{epoch}_{step}.pth')
+                    save_checkpoint(model, f'efficientdet-d{opt.compound_coef}_trained_weights.pth')
+                    with open(os.path.join(opt.saved_path, f"best_epoch-d{opt.compound_coef}.txt"), "a") as my_file: 
+                        my_file.write(f"Epoch:{epoch} / Step: {step} / Loss: {best_loss}\n") 
+
 
                 model.train()
 
@@ -321,6 +325,15 @@ def save_checkpoint(model, name):
         torch.save(model.model.state_dict(), os.path.join(opt.saved_path, name))
 
 
+#LIMIT THE NUMBER OF CPU TO PROCESS THE JOB
+def throttle_cpu(cpu_list):
+    p = psutil.Process()
+    for i in p.threads():
+        temp = psutil.Process(i.id)
+        temp.cpu_affinity([i for i in cpu_list])
+
+
 if __name__ == '__main__':
+    #throttle_cpu([28,29,30,31,32,33,34,35,36,37,38,39])
     opt = get_args()
     train(opt)

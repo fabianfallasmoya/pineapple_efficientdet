@@ -12,7 +12,7 @@ import torch
 import webcolors
 from torch import nn
 from torch.nn.init import _calculate_fan_in_and_fan_out, _no_grad_normal_
-from torchvision.ops.boxes import batched_nms
+from torchvision.ops.boxes import batched_nms, nms
 
 from utils.sync_batchnorm import SynchronizedBatchNorm2d
 
@@ -65,7 +65,7 @@ def aspectaware_resize_padding(image, width, height, interpolation=None, means=N
     return canvas, new_w, new_h, old_w, old_h, padding_w, padding_h,
 
 
-def preprocess(*image_path, max_size=512, mean=(0.485, 0.456, 0.406), std=(0.229, 0.224, 0.225)):
+def preprocess_all(image_path, max_size=512, mean=(0.485, 0.456, 0.406), std=(0.229, 0.224, 0.225)):
     ori_imgs = [cv2.imread(img_path) for img_path in image_path]
     normalized_imgs = [(img[..., ::-1] / 255 - mean) / std for img in ori_imgs]
     imgs_meta = [aspectaware_resize_padding(img, max_size, max_size,
@@ -75,6 +75,16 @@ def preprocess(*image_path, max_size=512, mean=(0.485, 0.456, 0.406), std=(0.229
 
     return ori_imgs, framed_imgs, framed_metas
 
+
+def preprocess(*image_path, max_size=512, mean=(0.485, 0.456, 0.406), std=(0.229, 0.224, 0.225)):
+    ori_imgs = [cv2.imread(img_path) for img_path in image_path]
+    normalized_imgs = [(img[..., ::-1] / 255 - mean) / std for img in ori_imgs]
+    imgs_meta = [aspectaware_resize_padding(img, max_size, max_size,
+                                            means=None) for img in normalized_imgs]
+    framed_imgs = [img_meta[0] for img_meta in imgs_meta]
+    framed_metas = [img_meta[1:] for img_meta in imgs_meta]
+
+    return ori_imgs, framed_imgs, framed_metas
 
 def preprocess_video(*frame_from_video, max_size=512, mean=(0.406, 0.456, 0.485), std=(0.225, 0.224, 0.229)):
     ori_imgs = frame_from_video
@@ -87,19 +97,25 @@ def preprocess_video(*frame_from_video, max_size=512, mean=(0.406, 0.456, 0.485)
     return ori_imgs, framed_imgs, framed_metas
 
 
-def postprocess(x, anchors, regression, 
-                classification, regressBoxes, 
-                clipBoxes, threshold, 
-                iou_threshold, pyramid_limits):
+def postprocess(x, 
+                anchors, 
+                regression, 
+                classification, 
+                regressBoxes, 
+                clipBoxes, 
+                threshold, 
+                iou_threshold, 
+                pyramid_limits):
+    
     transformed_anchors = regressBoxes(anchors, regression)
     transformed_anchors = clipBoxes(transformed_anchors, x)
-    scores = torch.max(classification, dim=2, keepdim=True)[0]
-    scores_over_thresh = (scores > threshold)[:, :, 0]
+    scores = torch.max(classification, dim=2, keepdim=True)[0]#max returns two lists: values[0] and indices[1]-> we want values
+    scores_over_thresh = (scores > threshold)[:, :, 0]#example of the shape for scores: [1, 49104, 1]
     out = []
     
     #--------------------------------------------------------------------------
     pyramid_boundaries = [upper for lower,upper in pyramid_limits]
-    pyramid_count = torch.zeros(5, requires_grad=False)
+    pyramid_count = torch.zeros(5, requires_grad=False, dtype=torch.int32)
     #--------------------------------------------------------------------------
     
     for i in range(x.shape[0]):
@@ -116,7 +132,9 @@ def postprocess(x, anchors, regression,
         transformed_anchors_per = transformed_anchors[i, scores_over_thresh[i, :], ...]
         scores_per = scores[i, scores_over_thresh[i, :], ...]
         scores_, classes_ = classification_per.max(dim=0)
-        anchors_nms_idx = batched_nms(transformed_anchors_per, scores_per[:, 0], classes_, iou_threshold=iou_threshold)
+        
+        #anchors_nms_idx = batched_nms(transformed_anchors_per, scores_per[:, 0], classes_, iou_threshold=iou_threshold)
+        anchors_nms_idx = nms(transformed_anchors_per, scores_per[:, 0], iou_threshold=iou_threshold)
         
         #----------------------------------------------------------------------
         current_scores_over_thresh = scores_over_thresh[i].detach().clone()
@@ -127,7 +145,7 @@ def postprocess(x, anchors, regression,
         
         digitized_bboxes = np.digitize(indx_nms, pyramid_boundaries)
         for index, val in enumerate(torch.from_numpy(np.bincount(digitized_bboxes.reshape((-1))))):
-            pyramid_count[index] += val
+            pyramid_count[index] += val.item()
         #----------------------------------------------------------------------
 
         if anchors_nms_idx.shape[0] != 0:
@@ -139,15 +157,112 @@ def postprocess(x, anchors, regression,
                 'rois': boxes_.cpu().numpy(),
                 'class_ids': classes_.cpu().numpy(),
                 'scores': scores_.cpu().numpy(),
+                'pyramid_level': digitized_bboxes.reshape((-1)),
             })
         else:
             out.append({
                 'rois': np.array(()),
                 'class_ids': np.array(()),
                 'scores': np.array(()),
+                'pyramid_level': digitized_bboxes.reshape((-1)),
             })
 
-    return out, pyramid_count
+    return out, pyramid_count, 0
+
+
+def postprocess_pyramid_filter(x,
+                               anchors, 
+                               regression, 
+                               classification, 
+                               regressBoxes, 
+                               clipBoxes, 
+                               threshold, 
+                               iou_threshold, 
+                               pyramid_limits,
+                               pyramid_filter):
+    
+    transformed_anchors = regressBoxes(anchors, regression)
+    transformed_anchors = clipBoxes(transformed_anchors, x)
+    scores = torch.max(classification, dim=2, keepdim=True)[0]#max returns two lists: values[0] and indices[1]-> we want values
+    scores_over_thresh = (scores > threshold)[:, :, 0]#example of the shape for scores: [1, 49104, 1]
+    out = []
+    
+    #--------------------------------------------------------------------------
+    pyramid_boundaries = [upper for lower,upper in pyramid_limits]
+    pyramid_count = torch.zeros(5, requires_grad=False, dtype=torch.int32)
+    #--------------------------------------------------------------------------
+    
+    for i in range(x.shape[0]):
+        if scores_over_thresh[i].sum() == 0:
+            out.append({
+                'rois': np.array(()),
+                'class_ids': np.array(()),
+                'scores': np.array(()),
+            })
+            continue
+        
+        
+        classification_per = classification[i, scores_over_thresh[i, :], ...].permute(1, 0)
+        transformed_anchors_per = transformed_anchors[i, scores_over_thresh[i, :], ...]
+        scores_per = scores[i, scores_over_thresh[i, :], ...]
+        scores_, classes_ = classification_per.max(dim=0)
+        
+        #anchors_nms_idx = batched_nms(transformed_anchors_per, scores_per[:, 0], classes_, iou_threshold=iou_threshold)
+        anchors_nms_idx = nms(transformed_anchors_per, scores_per[:, 0], iou_threshold=iou_threshold)
+        
+        
+        #----------------------------------------------------------------------
+        #Get the level of the pyramid for every bounding box
+        current_scores_over_thresh = scores_over_thresh[i].detach().clone()
+        #indx_scores_over_thresh = torch.where(indx_scores_over_thresh == True, torch.tensor(1.), torch.tensor(0.))
+        
+        indx_scores_over_thresh = torch.nonzero(current_scores_over_thresh)
+        indx_nms = indx_scores_over_thresh[anchors_nms_idx].cpu().detach().numpy()
+        
+        digitized_bboxes = np.digitize(indx_nms, pyramid_boundaries)
+        for index, val in enumerate(torch.from_numpy(np.bincount(digitized_bboxes.reshape((-1))))):
+            pyramid_count[index] += val.item()
+        #----------------------------------------------------------------------
+        
+        
+        #----------------------------------------------------------------------
+        #Filter results using the received pyramid
+        main_level = pyramid_filter.argmax(dim=0).item()
+        filtered_levels = []
+        filtered_levels.append(main_level)
+        filtered_levels.append(main_level + 1)
+        
+        anchors_list_filtered = []
+        mask_isin = np.isin(digitized_bboxes.reshape((-1)), filtered_levels)
+        for index, anchor_indx in enumerate(anchors_nms_idx):
+            if mask_isin[index] == True:
+                anchors_list_filtered.append(anchor_indx)
+                
+        #convert into torch tensor
+        anchors_nms_idx_filtered = torch.tensor(anchors_list_filtered, device=torch.device('cuda'))
+        #----------------------------------------------------------------------
+        
+
+        if anchors_nms_idx.shape[0] != 0:
+            classes_ = classes_[anchors_nms_idx_filtered]
+            scores_ = scores_[anchors_nms_idx_filtered]
+            boxes_ = transformed_anchors_per[anchors_nms_idx_filtered, :]
+
+            out.append({
+                'rois': boxes_.cpu().numpy(),
+                'class_ids': classes_.cpu().numpy(),
+                'scores': scores_.cpu().numpy(),
+                'pyramid_level': digitized_bboxes.reshape((-1)),
+            })
+        else:
+            out.append({
+                'rois': np.array(()),
+                'class_ids': np.array(()),
+                'scores': np.array(()),
+                'pyramid_level': digitized_bboxes.reshape((-1)),
+            })
+
+    return out, pyramid_count, len(anchors_nms_idx_filtered)
 
 
 def display(preds, imgs, obj_list, imshow=True, imwrite=False):

@@ -17,7 +17,7 @@ from utils.utils import preprocess, invert_affine, postprocess, STANDARD_COLORS,
 
 compound_coef = 4
 force_input_size = None  # set None to use default size
-img_path = 'test/15mts.jpg'
+img_path = 'test/test5mts_zoom3.jpg'
 
 # replace this part with your project's anchor config
 anchor_ratios = [(1.0, 1.0), (1.4, 0.7), (0.7, 1.4)]
@@ -45,7 +45,7 @@ obj_list = ['person', 'bicycle', 'car', 'motorcycle', 'airplane', 'bus', 'train'
 obj_list = ['pineapple']
 
 
-color_list = standard_to_bgr(STANDARD_COLORS)
+color_list = standard_to_bgr(STANDARD_COLORS) 
 # tf bilinear interpolation is different from any other's, just make do
 input_sizes = [512, 640, 768, 896, 1024, 1280, 1280, 1536, 1536]
 input_size = input_sizes[compound_coef] if force_input_size is None else force_input_size
@@ -58,10 +58,13 @@ else:
 
 x = x.to(torch.float32 if not use_float16 else torch.float16).permute(0, 3, 1, 2)
 
-model = EfficientDetBackbone(compound_coef=compound_coef, num_classes=len(obj_list),
-                             ratios=anchor_ratios, scales=anchor_scales)
+model = EfficientDetBackbone(compound_coef=compound_coef, 
+                             num_classes=len(obj_list),
+                             ratios=anchor_ratios, 
+                             scales=anchor_scales)
+
 #model.load_state_dict(torch.load(f'weights/efficientdet-d{compound_coef}.pth', map_location='cpu'))
-model.load_state_dict(torch.load(f'weights/efficientdet-d4_15mts.pth', map_location='cpu'))#
+model.load_state_dict(torch.load(f'weights/efficientdet-d4_5mts.pth', map_location='cpu'))#
 model.requires_grad_(False)
 model.eval()
 
@@ -82,6 +85,28 @@ with torch.no_grad():
                       threshold, iou_threshold,
                       model.pyramid_limits)
 
+color_dict = {
+    #level 3 -> red
+    0:{'red':255, 'green':51, 'blue':0},
+    
+    #level 4 -> purple
+    1:{'red':204, 'green':0, 'blue':255},
+    
+    #level 5 -> green
+    2:{'red':0, 'green':204, 'blue':102},
+    
+    #level 6 -> light blue
+    3:{'red':102, 'green':204, 'blue':255},
+    
+    #level 7 -> white
+    4:{'red':255, 'green':255, 'blue':255}
+    }
+
+def get_pyramid_color(pyramid_level):
+    colors = color_dict[pyramid_level]
+    return colors['red'], colors['green'], colors['blue']
+
+
 def display(preds, imgs, imshow=True, imwrite=False):
     for i in range(len(imgs)):
         if len(preds[i]['rois']) == 0:
@@ -93,7 +118,17 @@ def display(preds, imgs, imshow=True, imwrite=False):
             x1, y1, x2, y2 = preds[i]['rois'][j].astype(np.int)
             obj = obj_list[preds[i]['class_ids'][j]]
             score = float(preds[i]['scores'][j])
-            plot_one_box(imgs[i], [x1, y1, x2, y2], label=obj,score=score,color=color_list[get_index_label(obj, obj_list)])
+            
+            #get a different color for every level of the pyramid
+            red, green, blue = get_pyramid_color(preds[i]['pyramid_level'][j])
+            #Coding for cv2: (Blue, Green, Red)
+            my_color = (blue, green, red)
+            plot_one_box(imgs[i], 
+                         [x1, y1, x2, y2], 
+                         label=obj,
+                         score=score,
+                         color=my_color,
+                         line_thickness=2)
 
 
         if imshow:
