@@ -189,8 +189,6 @@ def getImageDetections(imagePath, weights, nms_threshold, confidenceParam, coeff
             (x1, y1, x2, y2) = out[i]['rois'][j].astype(np.int)
             detectionsList.append((float(out[i]['scores'][j]), x1, y1, x2, y2))
         return detectionsList, pyramid_count, num_bboxes
-    
-    return None, None, None
 
 
 
@@ -231,10 +229,6 @@ def generateFiles(confidenceParam, pyramid_filter, filter_results):
     real_number_bboxes = 0
     for index,image in imagesDataframe.iterrows():
         imageName = image['file_name'][0:len(image['file_name'])-4]
-        
-        #print(imageName)
-        #if imageName == "00000034_02_01_aug_jpg.rf.6dcdf3643dce50f53b18ff67971e1881":
-        #    print('bingo')
 
         fileGroundTruth = open(dirGroundTruthPath + imageName + ".txt", "w")
         fileDetections = open(dirDetectionsPath + imageName + ".txt", "w")
@@ -263,12 +257,10 @@ def generateFiles(confidenceParam, pyramid_filter, filter_results):
                                                                             coefficient,
                                                                             pyramid_filter,
                                                                             filter_results)
-        
+        #accumulate torch pyramid
+        pyramid_acc += pyramid_current
+        real_number_bboxes += num_bboxes
         if(image_detections != None):
-            #accumulate torch pyramid
-            pyramid_acc += pyramid_current
-            real_number_bboxes += num_bboxes
-        
             for confidenceScore, xd1, yd1, xd2, yd2 in image_detections:
                 fileDetections.write(project + " " + str(confidenceScore) + " " + 
                                      str(xd1) + " " + str(yd1) + " " + str(xd2) + " " + str(yd2) + "\n")
