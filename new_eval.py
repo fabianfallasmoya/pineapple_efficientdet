@@ -107,7 +107,6 @@ def get_pyramid_mask(dir_images, weights_location):
             mask.append(i)
     mask.sort()
     
-    
     return mask
 
 
