@@ -37,7 +37,8 @@ class PyramidAnalysis:
         self.im_save = im_save
         
         if(not os.path.isdir(root_dir_testing + "_results/")):
-            os.mkdir(root_dir_testing + "_results/")
+            #os.system('mkdir', root_dir_testing + "_results/")
+            os.makedirs(root_dir_testing + "_results/")
             
         self.destination_dir_images = root_dir_testing + '_results/'
         
@@ -165,7 +166,7 @@ class PyramidAnalysis:
             yield data[ndx:min(ndx + n, l)]
 
 
-
+'''
 weights_location = 'weights/efficientdet-d4_5mts.pth'
 root_dir_testing = "datasets/pineapple_215_8mts_train_val_test/test"
 im_save = True
@@ -182,6 +183,6 @@ for my_batch in pyramid.get_batch(img_path, 3):
     pyramid_acc += pyramid_temp
 
 
-print(pyramid_acc)
+print(pyramid_acc)'''
 
 

@@ -179,7 +179,7 @@ def postprocess_pyramid_filter(x,
                                threshold, 
                                iou_threshold, 
                                pyramid_limits,
-                               pyramid_filter):
+                               pyramid_mask):
     
     transformed_anchors = regressBoxes(anchors, regression)
     transformed_anchors = clipBoxes(transformed_anchors, x)
@@ -227,13 +227,23 @@ def postprocess_pyramid_filter(x,
         
         #----------------------------------------------------------------------
         #Filter results using the received pyramid
-        main_level = pyramid_filter.argmax(dim=0).item()
+        '''main_level = pyramid_filter.argmax(dim=0).item()
         filtered_levels = []
         filtered_levels.append(main_level)
-        filtered_levels.append(main_level + 1)
+        
+        #these are the cases for the next level to take into account for the analysis
+        if main_level == 0:
+            filtered_levels.append(main_level + 1)
+        elif main_level == (len(pyramid_filter) - 1):
+            filtered_levels.append(main_level - 1)
+        else:
+            if pyramid_filter[main_level - 1] > pyramid_filter[main_level + 1]:
+                filtered_levels.append(main_level - 1)
+            else:
+                filtered_levels.append(main_level + 1)'''
         
         anchors_list_filtered = []
-        mask_isin = np.isin(digitized_bboxes.reshape((-1)), filtered_levels)
+        mask_isin = np.isin(digitized_bboxes.reshape((-1)), pyramid_mask)
         for index, anchor_indx in enumerate(anchors_nms_idx):
             if mask_isin[index] == True:
                 anchors_list_filtered.append(anchor_indx)
