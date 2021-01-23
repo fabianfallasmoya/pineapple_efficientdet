@@ -192,6 +192,7 @@ def postprocess_pyramid_filter(x,
     pyramid_count = torch.zeros(5, requires_grad=False, dtype=torch.int32)
     #--------------------------------------------------------------------------
     
+    found_ground_truth = False
     for i in range(x.shape[0]):
         if scores_over_thresh[i].sum() == 0:
             out.append({
@@ -201,7 +202,7 @@ def postprocess_pyramid_filter(x,
             })
             continue
         
-        
+        found_ground_truth = True
         classification_per = classification[i, scores_over_thresh[i, :], ...].permute(1, 0)
         transformed_anchors_per = transformed_anchors[i, scores_over_thresh[i, :], ...]
         scores_per = scores[i, scores_over_thresh[i, :], ...]
@@ -225,23 +226,7 @@ def postprocess_pyramid_filter(x,
         #----------------------------------------------------------------------
         
         
-        #----------------------------------------------------------------------
-        #Filter results using the received pyramid
-        '''main_level = pyramid_filter.argmax(dim=0).item()
-        filtered_levels = []
-        filtered_levels.append(main_level)
-        
-        #these are the cases for the next level to take into account for the analysis
-        if main_level == 0:
-            filtered_levels.append(main_level + 1)
-        elif main_level == (len(pyramid_filter) - 1):
-            filtered_levels.append(main_level - 1)
-        else:
-            if pyramid_filter[main_level - 1] > pyramid_filter[main_level + 1]:
-                filtered_levels.append(main_level - 1)
-            else:
-                filtered_levels.append(main_level + 1)'''
-        
+        #----------------------------------------------------------------------        
         anchors_list_filtered = []
         mask_isin = np.isin(digitized_bboxes.reshape((-1)), pyramid_mask)
         for index, anchor_indx in enumerate(anchors_nms_idx):
@@ -251,7 +236,10 @@ def postprocess_pyramid_filter(x,
         #convert into torch tensor
         anchors_nms_idx_filtered = torch.tensor(anchors_list_filtered, device=torch.device('cuda'))
         #----------------------------------------------------------------------
-        
+        #print('bingo')
+        #print(anchors_nms_idx_filtered)
+        if (anchors_nms_idx_filtered.numel() == 0):
+            continue
 
         if anchors_nms_idx.shape[0] != 0:
             classes_ = classes_[anchors_nms_idx_filtered]
@@ -271,8 +259,11 @@ def postprocess_pyramid_filter(x,
                 'scores': np.array(()),
                 'pyramid_level': digitized_bboxes.reshape((-1)),
             })
-
-    return out, pyramid_count, len(anchors_nms_idx_filtered)
+            
+    if found_ground_truth:
+        return out, pyramid_count, len(anchors_nms_idx_filtered)
+    else:
+        return out, pyramid_count, 0
 
 
 def display(preds, imgs, obj_list, imshow=True, imwrite=False):

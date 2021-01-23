@@ -83,6 +83,7 @@ def get_pyramid_mask(dir_images, weights_location):
         pyramid_temp, img_id = pyramid.results_batch(my_batch, img_id)
         pyramid_acc += pyramid_temp
     
+    
     #Filter results using the received pyramid
     hot_spot = pyramid_acc.argmax(dim=0).item()
     mask = []
@@ -96,7 +97,6 @@ def get_pyramid_mask(dir_images, weights_location):
         else:
             mask.append(i)
     
-    print()
     no_zero_found = True
     for i in range(hot_spot, len(pyramid_acc)):
         if no_zero_found == False:
@@ -205,7 +205,7 @@ def getImageDetections(imagePath, weights, nms_threshold, confidenceParam, coeff
     out = invert_affine(framed_metas, out)
      
     for i in range(len(ori_imgs)):
-        if len(out[i]['rois']) == 0:
+        if len(out) == 0 or len(out[i]['rois']) == 0:
             continue
         detectionsList = []
         for j in range(len(out[i]['rois'])):
