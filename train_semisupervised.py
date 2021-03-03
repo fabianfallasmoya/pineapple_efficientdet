@@ -3,8 +3,13 @@ import argparse
 import datetime
 import os
 import traceback
+<<<<<<< HEAD
 import psutil
 #semisupervised
+=======
+import psutil     
+##
+>>>>>>> 4fe95084e62c838e32c57f298f48f9ecffe0596d
 
 import numpy as np
 import torch
