@@ -1,6 +1,8 @@
 import torch
 import os
 from torch.backends import cudnn
+import psutil
+#bingo
 
 from backbone import EfficientDetBackbone
 import cv2
@@ -11,10 +13,20 @@ import yaml
 import json
 
 from efficientdet.utils import BBoxTransform, ClipBoxes
-from utils.utils import preprocess, preprocess_all, invert_affine, postprocess
+from utils.utils import preprocess, preprocess_all, invert_affine, postprocess_original
+
+#LIMIT THE NUMBER OF CPU TO PROCESS THE JOB
+def throttle_cpu(cpu_list):
+    p = psutil.Process()
+    for i in p.threads():
+        temp = psutil.Process(i.id)
+        temp.cpu_affinity([i for i in cpu_list])
+
 
 #version para calcular visualize sobre todas las imagenes de un folder
 if(True):
+    throttle_cpu([28,29,30,31,32,33,34,35,36,37,38,39]) 
+    
     compound_coef = 4
     force_input_size = None  # set None to use default size
     
@@ -22,7 +34,7 @@ if(True):
     destination_dir_images = root_dir_testing + '_results/'
     original_names = os.listdir(root_dir_testing)
     img_path = [root_dir_testing + '/' + i for i in original_names]
-    print(img_path)
+    #print(img_path)
     
     threshold = 0.4
     iou_threshold = 0.4
@@ -52,7 +64,7 @@ if(True):
                                  ratios=[(1.0, 1.0), (1.4, 0.7), (0.7, 1.4)],
                                  scales=[2 ** 0, 2 ** (1.0 / 3.0), 2 ** (2.0 / 3.0)])
     
-    model.load_state_dict(torch.load('logs/apple_semi_annotated/efficientdet-d4_trained_weights.pth'))
+    model.load_state_dict(torch.load('logs/apple/efficientdet-d4_trained_weights.pth'))
     model.requires_grad_(False)
     model.eval()
     
@@ -67,10 +79,10 @@ if(True):
         regressBoxes = BBoxTransform()
         clipBoxes = ClipBoxes()
     
-        out = postprocess(x,
-                          anchors, regression, classification,
-                          regressBoxes, clipBoxes,
-                          threshold, iou_threshold)
+        out = postprocess_original(x,
+                                  anchors, regression, classification,
+                                  regressBoxes, clipBoxes,
+                                  threshold, iou_threshold)
     
     out = invert_affine(framed_metas, out)
     

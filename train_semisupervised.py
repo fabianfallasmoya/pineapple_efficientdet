@@ -4,6 +4,7 @@ import datetime
 import os
 import traceback
 import psutil
+#bingo
 
 import numpy as np
 import torch
@@ -450,7 +451,8 @@ def semisupervised_training(opt):
 
 
 if __name__ == '__main__':
-    #throttle_cpu([28,29,30,31,32,33,34,35,36,37,38,39]) 
+    throttle_cpu([28,29,30,31,32,33,34,35,36,37,38,39]) 
+    
 
     opt = get_args()
     semisupervised_training(opt)
