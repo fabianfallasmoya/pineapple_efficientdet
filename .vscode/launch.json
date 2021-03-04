@@ -1,0 +1,16 @@
+{
+    // Use IntelliSense to learn about possible attributes.
+    // Hover to view descriptions of existing attributes.
+    // For more information, visit: https://go.microsoft.com/fwlink/?linkid=830387
+    "version": "0.2.0",
+    "configurations": [
+        {
+            "name": "Python: Current File",
+            "type": "python",
+            "request": "launch",
+            "program": "${file}",
+            "console": "integratedTerminal",
+            "args": ["-c", "4", "-p", "apple_semi_annotated", "--lr", "1e-5", "--batch_size", "1", "--load_weights", "weights/efficientdet-d4.pth", "--num_epochs", "100", "--es_patience", "10"]
+        }
+    ]
+}

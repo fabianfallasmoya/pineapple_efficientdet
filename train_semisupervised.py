@@ -4,7 +4,7 @@ import datetime
 import os
 import traceback
 import psutil
-#semisupervised
+import cv2
 
 import numpy as np
 import torch
@@ -14,13 +14,15 @@ from torch import nn
 from torch.utils.data import DataLoader
 from torchvision import transforms
 from tqdm.autonotebook import tqdm
-#semie
+from torch.backends import cudnn
 
 from backbone import EfficientDetBackbone
 from efficientdet.dataset import CocoDataset, Resizer, Normalizer, Augmenter, collater
 from efficientdet.loss import FocalLoss
 from utils.sync_batchnorm import patch_replication_callback
-from utils.utils import replace_w_sync_bn, CustomDataParallel, get_last_weights, init_weights, boolean_string
+from utils.utils import replace_w_sync_bn, CustomDataParallel, get_last_weights, init_weights, boolean_string, preprocess_all, invert_affine, postprocess_original
+from efficientdet.utils import BBoxTransform, ClipBoxes
+#from utils.utils import preprocess, preprocess_all, invert_affine, postprocess_original
 
 
 class Params:
@@ -401,12 +403,114 @@ def main_train(opt):
 
 
 
+def generate_pseudolabels(opt):
+    
+    # Load general parameters from the model
+    #----------------------------------------------------
+    params = Params(f'projects/{opt.project}.yml')
+    obj_list = params.obj_list#['apple']
+    
+    
+    root_dir_testing = f'datasets/{params.project_name}/{params.train_set_unlabeled}'
+    destination_dir_images = root_dir_testing + '_results/'
+    if not os.path.exists(destination_dir_images):
+        os.makedirs(destination_dir_images)
+    
+    threshold = 0.4
+    iou_threshold = 0.4
+    
+    use_cuda = False
+    use_float16 = False
+    cudnn.fastest = True
+    cudnn.benchmark = True
+    force_input_size = None  # set None to use default size
+
+    #get all unlabeled images
+    original_names = os.listdir(root_dir_testing)
+    img_path = [root_dir_testing + '/' + i for i in original_names]
+    
+    
+    # tf bilinear interpolation is different from any other's, just make do
+    input_sizes = [512, 640, 768, 896, 1024, 1280, 1280, 1536]
+    input_size = input_sizes[opt.compound_coef] if force_input_size is None else force_input_size
+    #----------------------------------------------------
 
 
+    # Preprocess all images and stack them
+    #----------------------------------------------------
+    ori_imgs, framed_imgs, framed_metas = preprocess_all(img_path, max_size=input_size)  
+
+    if use_cuda:
+        x = torch.stack([torch.from_numpy(fi).cuda() for fi in framed_imgs], 0)
+    else:
+        x = torch.stack([torch.from_numpy(fi) for fi in framed_imgs], 0)
+    
+    x = x.to(torch.float32 if not use_float16 else torch.float16).permute(0, 3, 1, 2)
+    #----------------------------------------------------
+
+
+    # Instance model and get predictions
+    #----------------------------------------------------
+    model = EfficientDetBackbone(compound_coef = opt.compound_coef, 
+                                 num_classes = len(obj_list),
+                                 ratios = eval(params.anchors_ratios),
+                                 scales = eval(params.anchors_scales))
+    
+    model.load_state_dict(torch.load(f'logs/{params.project_name}/efficientdet-d4_trained_weights_semi.pth'))
+    model.requires_grad_(False) # disable learning
+    model.eval() # double check - disable learning
+    
+    if use_cuda:
+        model = model.cuda()
+    if use_float16:
+        model = model.half()
+    
+    #get predictions
+    with torch.no_grad():
+        features, regression, classification, anchors = model(x)
+    
+        regressBoxes = BBoxTransform()
+        clipBoxes = ClipBoxes()
+    
+        out = postprocess_original(x,
+                                  anchors, regression, classification,
+                                  regressBoxes, clipBoxes,
+                                  threshold, iou_threshold)
+    
+    out = invert_affine(framed_metas, out)
+    #----------------------------------------------------
+
+
+    # Thresholding and saving images
+    #----------------------------------------------------
+    from PIL import Image
+    import PIL
+        
+    for i in range(len(ori_imgs)):
+        print(len(ori_imgs))
+        if len(out[i]['rois']) == 0:
+            continue
+    
+        for j in range(len(out[i]['rois'])):
+            (x1, y1, x2, y2) = out[i]['rois'][j].astype(np.int)
+            cv2.rectangle(ori_imgs[i], (x1, y1), (x2, y2), (255, 255, 0), 2)
+            obj = obj_list[out[i]['class_ids'][j]]
+            score = float(out[i]['scores'][j])
+    
+            cv2.putText(ori_imgs[i], '{}, {:.3f}'.format(obj, score),
+                        (x1, y1 + 10), cv2.FONT_HERSHEY_SIMPLEX, 0.5,
+                        (255, 255, 0), 1)
+            
+            #print(type(ori_imgs[i]))
+            #print(ori_imgs[i].shape)
+            #print(ori_imgs[i][0])
+            image_ = Image.fromarray(np.uint8(ori_imgs[i]), 'RGB')
+        image_.save(destination_dir_images + original_names[i])   
+    #----------------------------------------------------
 
 
 def get_args():
-    parser = argparse.ArgumentParser('Yet Another EfficientDet Pytorch: SOTA object detection network - Zylo117')
+    parser = argparse.ArgumentParser('EfficientDet Pytorch')
     parser.add_argument('-p', '--project', type=str, default='coco', help='project file that contains parameters')
     parser.add_argument('-c', '--compound_coef', type=int, default=0, help='coefficients of efficientdet')
     parser.add_argument('-n', '--num_workers', type=int, default=12, help='num_workers of dataloader')
@@ -451,9 +555,11 @@ def semisupervised_training(opt):
 
 
 
+
+
 if __name__ == '__main__':
     throttle_cpu([28,29,30,31,32,33,34,35,36,37,38,39]) 
     
-
     opt = get_args()
-    semisupervised_training(opt)
+    #semisupervised_training(opt)
+    generate_pseudolabels(opt)

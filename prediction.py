@@ -2,7 +2,6 @@ import torch
 import os
 from torch.backends import cudnn
 import psutil
-#bingo
 
 from backbone import EfficientDetBackbone
 import cv2
