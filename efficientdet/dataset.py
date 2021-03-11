@@ -8,13 +8,17 @@ import cv2
 
 
 class CocoDataset(Dataset):
-    def __init__(self, root_dir, set='train2017', transform=None):
+    def __init__(self, root_dir, set='train2017', transform=None, iteration=0):
 
         self.root_dir = root_dir
-        self.set_name = set
         self.transform = transform
 
-        self.coco = COCO(os.path.join(self.root_dir, 'annotations', 'instances_' + self.set_name + '.json'))
+        if iteration - 1 < 1:
+            self.set_name = set
+            self.coco = COCO(os.path.join(self.root_dir, 'annotations', 'instances_' + self.set_name + '.json'))
+        else:
+            self.set_name = set + '_' + str(iteration - 1)
+            self.coco = COCO(os.path.join(self.root_dir, 'annotations', 'instances_' + self.set_name + '.json'))
         self.image_ids = self.coco.getImgIds()
 
         self.load_classes()
@@ -49,6 +53,9 @@ class CocoDataset(Dataset):
     def load_image(self, image_index):
         image_info = self.coco.loadImgs(self.image_ids[image_index])[0]
         path = os.path.join(self.root_dir, self.set_name, image_info['file_name'])
+        #print('-------------------------------')
+        #print(path)
+        #print('-------------------------------')
         img = cv2.imread(path)
         img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
 

@@ -1,0 +1,1 @@
+iterations,groundtruth_num,num_detections,nms_threshold,confidence_threshold,precision,recall,f1_score

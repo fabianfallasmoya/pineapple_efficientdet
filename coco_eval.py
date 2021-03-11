@@ -22,7 +22,7 @@ from pycocotools.cocoeval import COCOeval
 
 from backbone import EfficientDetBackbone
 from efficientdet.utils import BBoxTransform, ClipBoxes
-from utils.utils import preprocess, invert_affine, postprocess, boolean_string
+from utils.utils import preprocess, invert_affine, postprocess_original, boolean_string
 
 ap = argparse.ArgumentParser()
 ap.add_argument('-p', '--project', type=str, default='coco', help='project file that contains parameters')
@@ -52,7 +52,7 @@ obj_list = params['obj_list']
 input_sizes = [512, 640, 768, 896, 1024, 1280, 1280, 1536, 1536]
 
 
-def evaluate_coco(img_path, set_name, image_ids, coco, model, threshold=0.05):
+def evaluate_coco(img_path, set_name, image_ids, coco, model, threshold=0.4):
     results = []
 
     regressBoxes = BBoxTransform()
@@ -77,7 +77,7 @@ def evaluate_coco(img_path, set_name, image_ids, coco, model, threshold=0.05):
         x = x.unsqueeze(0).permute(0, 3, 1, 2)
         features, regression, classification, anchors = model(x)
 
-        preds = postprocess(x,
+        preds = postprocess_original(x,
                             anchors, regression, classification,
                             regressBoxes, clipBoxes,
                             threshold, nms_threshold)

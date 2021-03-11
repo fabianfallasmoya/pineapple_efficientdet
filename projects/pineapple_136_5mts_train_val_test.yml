@@ -1,6 +1,7 @@
 project_name: pineapple_136_5mts_train_val_test  # also the folder name of the dataset that under data_path folder
 train_set: train
-val_set: valid
+train_set_unlabeled: valid
+val_set: test
 test_set: test
 num_gpus: 1
 

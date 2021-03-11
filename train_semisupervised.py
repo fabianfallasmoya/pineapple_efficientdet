@@ -1,14 +1,19 @@
-# adapted from https://github.com/signatrix/efficientdet/blob/master/train.py
+# adapted from https://github.cojson_ix/efficientdet/blob/master/train.py
 import argparse
 import datetime
 import os
 import traceback
 import psutil
 import cv2
+from shutil import copyfile
 
 import numpy as np
 import torch
 import yaml
+import json
+from PIL import Image
+import copy
+
 from tensorboardX import SummaryWriter
 from torch import nn
 from torch.utils.data import DataLoader
@@ -23,6 +28,9 @@ from utils.sync_batchnorm import patch_replication_callback
 from utils.utils import replace_w_sync_bn, CustomDataParallel, get_last_weights, init_weights, boolean_string, preprocess_all, invert_affine, postprocess_original
 from efficientdet.utils import BBoxTransform, ClipBoxes
 #from utils.utils import preprocess, preprocess_all, invert_affine, postprocess_original
+from utils.semi_utils import get_image_json, insert_bbox
+from custom_coco_eval import run_metrics
+
 
 
 class Params:
@@ -31,6 +39,7 @@ class Params:
 
     def __getattr__(self, item):
         return self.params.get(item, None)
+
 
 
 class ModelWithLoss(nn.Module):
@@ -50,14 +59,17 @@ class ModelWithLoss(nn.Module):
         return cls_loss, reg_loss
 
 
-def save_checkpoint(model, name):
+
+def save_checkpoint(model, name, path_to_save_weights):
     if isinstance(model, CustomDataParallel):
-        torch.save(model.module.model.state_dict(), os.path.join(opt.saved_path, name))
+        torch.save(model.module.model.state_dict(), os.path.join(path_to_save_weights, name))
     else:
-        torch.save(model.model.state_dict(), os.path.join(opt.saved_path, name))
+        torch.save(model.model.state_dict(), os.path.join(path_to_save_weights, name))
 
 
-def main_train(opt):
+
+
+def main_train(opt, iteration):
 
     # Load general parameter from the model
     #----------------------------------------------------
@@ -71,13 +83,13 @@ def main_train(opt):
     else:
         torch.manual_seed(42)
 
-    opt.saved_path = opt.saved_path + f'/{params.project_name}/'
-    opt.log_path = opt.log_path + f'/{params.project_name}/tensorboard/'
-    os.makedirs(opt.log_path, exist_ok=True)
-    os.makedirs(opt.saved_path, exist_ok=True)
+    path_to_save_weights = opt.saved_path + f'/{params.project_name}_{iteration}/'
+    path_tensorboard = opt.log_path + f'/{params.project_name}_{iteration}/tensorboard/'
+    os.makedirs(path_tensorboard, exist_ok=True)
+    os.makedirs(path_to_save_weights, exist_ok=True)
 
     training_params = {'batch_size': opt.batch_size,
-                       'shuffle': True,
+                       'shuffle': False,
                        'drop_last': True,
                        'collate_fn': collater,
                        'num_workers': opt.num_workers}
@@ -92,13 +104,17 @@ def main_train(opt):
     # Load dataset
     #----------------------------------------------------
     input_sizes = [512, 640, 768, 896, 1024, 1280, 1280, 1536, 1356]
-    training_set = CocoDataset(root_dir=os.path.join(opt.data_path, params.project_name), set=params.train_set,
+    training_set = CocoDataset(root_dir=os.path.join(opt.data_path, params.project_name), 
+                               set=params.train_set,
                                transform=transforms.Compose([Normalizer(mean=params.mean, std=params.std),
                                                              Augmenter(),
-                                                             Resizer(input_sizes[opt.compound_coef])]))
+                                                             Resizer(input_sizes[opt.compound_coef])]),
+                               iteration=iteration
+                            )
     training_generator = DataLoader(training_set, **training_params)
 
-    val_set = CocoDataset(root_dir=os.path.join(opt.data_path, params.project_name), set=params.val_set,
+    val_set = CocoDataset(root_dir=os.path.join(opt.data_path, params.project_name), 
+                          set=params.val_set,
                           transform=transforms.Compose([Normalizer(mean=params.mean, std=params.std),
                                                         Resizer(input_sizes[opt.compound_coef])]))
     val_generator = DataLoader(val_set, **val_params)
@@ -112,17 +128,10 @@ def main_train(opt):
                                  scales = eval(params.anchors_scales))
 
 
-    # Load last weights (for semisupervised will be always default)
+    # Load last weights from COCO
     #----------------------------------------------------
     if opt.load_weights is not None:
-        if opt.load_weights.endswith('.pth'):
-            weights_path = opt.load_weights
-        else:
-            weights_path = get_last_weights(opt.saved_path)
-        try:
-            last_step = int(os.path.basename(weights_path).split('_')[-1].split('.')[0])
-        except:
-            last_step = 0
+        weights_path = opt.load_weights
 
         try:
             ret = model.load_state_dict(torch.load(weights_path), strict=False)
@@ -131,15 +140,22 @@ def main_train(opt):
             print(
                 '[Warning] Don\'t panic if you see this, this might be because you load a pretrained weights with different number of classes. The rest of the weights should be loaded already.')
 
-        print(f'[Info] loaded weights: {os.path.basename(weights_path)}, resuming checkpoint from step: {last_step}')
+        #print(f'[Info] loaded weights: {os.path.basename(weights_path)}, resuming checkpoint from step: {last_step}')
     else:
-        last_step = 0
-        print('[Info] initializing weights...')
-        init_weights(model)
+        #Random initialization
+        #print('[Info] initializing weights...')
+        #init_weights(model)
+        print("--------------------------------------------------")
+        print("--------------------------------------------------")
+        print("error 1")
+        print("--------------------------------------------------")
+        print("--------------------------------------------------")
+        return None
 
 
     # Freeze backbone if train head_only
     #----------------------------------------------------
+    '''
     if opt.head_only:
         print("THIS SHOULD BE SET TO FALSE SINCE THIS IS SEMISUPERVISED")
         def freeze_backbone(m):
@@ -151,6 +167,7 @@ def main_train(opt):
 
         model.apply(freeze_backbone)
         print('[Info] freezed backbone')
+    '''
 
 
     # Set a batch normalization option when using multiple GPU's
@@ -197,9 +214,10 @@ def main_train(opt):
     epoch = 0
     best_loss = 1e5
     best_epoch = 0
+    last_step = 0
     step = max(0, last_step)
     num_iter_per_epoch = len(training_generator)
-    writer = SummaryWriter(opt.log_path + f'/{datetime.datetime.now().strftime("%Y%m%d-%H%M%S")}/')
+    writer = SummaryWriter(path_tensorboard + f'{datetime.datetime.now().strftime("%Y%m%d-%H%M%S")}/')
 
 
     # Enable the model in learning model
@@ -286,9 +304,14 @@ def main_train(opt):
                     writer.add_scalar('learning_rate', current_lr, step)
 
                     step += 1
-                    #if step % opt.save_interval == 0 and step > 0:
-                    #    save_checkpoint(model, f'efficientdet-d{opt.compound_coef}_{epoch}_{step}.pth')
-                    #    print('checkpoint...')
+                    if step % opt.save_interval == 0 and step > 0:
+                        #save_checkpoint(model, f'efficientdet-d{opt.compound_coef}_{epoch}_{step}.pth')
+                        #save_checkpoint(model, f'efficientdet-d{opt.compound_coef}_trained_weights_semi.pth', path_to_save_weights)
+                        #save_checkpoint(model, f'efficientdet-d{opt.compound_coef}_{epoch}_{step}_semi.pth', path_to_save_weights)
+                        print('checkpoint...')
+
+                        #with open(os.path.join(path_to_save_weights, f"best_epoch-d{opt.compound_coef}_semi.txt"), "a") as my_file: 
+                        #    my_file.write(f"Checkpoint-Epoch:{epoch} / Step: {step} / Loss: {best_loss}\n") 
                     #----------
 
                 except Exception as e:
@@ -367,8 +390,8 @@ def main_train(opt):
                     best_loss = loss
                     best_epoch = epoch
 
-                    save_checkpoint(model, f'efficientdet-d{opt.compound_coef}_trained_weights_semi.pth')
-                    with open(os.path.join(opt.saved_path, f"best_epoch-d{opt.compound_coef}_semi.txt"), "a") as my_file: 
+                    save_checkpoint(model, f'efficientdet-d{opt.compound_coef}_trained_weights_semi.pth', path_to_save_weights)
+                    with open(os.path.join(path_to_save_weights, f"best_epoch-d{opt.compound_coef}_semi.txt"), "a") as my_file: 
                         my_file.write(f"Epoch:{epoch} / Step: {step} / Loss: {best_loss}\n") 
                 #----------
 
@@ -391,7 +414,7 @@ def main_train(opt):
 
     except KeyboardInterrupt:
         # in case of exception, save current model
-        save_checkpoint(model, f'efficientdet-d{opt.compound_coef}_{epoch}_{step}_semi.pth')
+        #save_checkpoint(model, f'efficientdet-d{opt.compound_coef}_{epoch}_{step}_semi.pth')
         writer.close()
     #----------------------------------------------------
     writer.close()
@@ -399,73 +422,96 @@ def main_train(opt):
 
     # Disable model to learn and return it
     #model.eval()
-    #return model
+    #return model'''
 
 
 
-def generate_pseudolabels(opt):
-    
-    # Load general parameters from the model
-    #----------------------------------------------------
+
+
+def generate_pseudolabels(opt, iteration, label_confidence):
+    #control print
+    print('1 - setting up parameters.')
+
+    #important parameters 
     params = Params(f'projects/{opt.project}.yml')
-    obj_list = params.obj_list#['apple']
-    
-    
-    root_dir_testing = f'datasets/{params.project_name}/{params.train_set_unlabeled}'
-    destination_dir_images = root_dir_testing + '_results/'
-    if not os.path.exists(destination_dir_images):
-        os.makedirs(destination_dir_images)
-    
+
+    project_name = params.project_name
+    compound_coef = opt.compound_coef
+    force_input_size = None  # set None to use default size
     threshold = 0.4
     iou_threshold = 0.4
+    #obj_list = ['apple']
+    obj_list = params.obj_list
+
+    ratios_ = eval(params.anchors_ratios)#[(1.0, 1.0), (1.4, 0.7), (0.7, 1.4)]
+    scales_ = eval(params.anchors_scales)#[2 ** 0, 2 ** (1.0 / 3.0), 2 ** (2.0 / 3.0)]
+    weights_ = f'logs/apple_semi_annotated_{str(iteration)}/efficientdet-d4_trained_weights_semi.pth'
+    #weights_ = f'logs/apple_semi_annotated/efficientdet-d4_trained_weights.pth'
+    unlabeled_images_set = params.train_set_unlabeled #'valid'
+    labeled_images_set = params.train_set #'train'
     
-    use_cuda = False
+    #Get images
+    root_dir_images_unlabeled = f'datasets/{project_name}/{unlabeled_images_set}'
+    original_names_unlabeled = os.listdir(root_dir_images_unlabeled)
+    img_path_unlabeled = [root_dir_images_unlabeled + '/' + i for i in original_names_unlabeled]
+
+    destination_dir_images_annotated = f'datasets/{project_name}/{labeled_images_set}_{str(iteration)}_results/'
+    if not os.path.exists(destination_dir_images_annotated):
+        os.mkdir(destination_dir_images_annotated)
+
+    #create a new folder with the labeled images
+    destination_labeled = f'datasets/{project_name}/{labeled_images_set}_{str(iteration)}/'
+    if not os.path.exists(destination_labeled):
+        os.mkdir(destination_labeled)
+
+    #copy all images from train/labeled samples, into the iteration folder
+    train_labeled_images = f'datasets/{project_name}/' + labeled_images_set
+    for i in os.listdir(train_labeled_images):
+        copyfile(train_labeled_images + '/' + i, destination_labeled + '/' + i)
+
+    
+    #Get original JSON
+    root_dir_orig_json = f'datasets/{project_name}/annotations/instances_{labeled_images_set}.json'
+    new_json_path = f'datasets/{project_name}/annotations/instances_{labeled_images_set}_{str(iteration)}.json'
+    
+    
+    #Model variables
+    use_cuda = True
     use_float16 = False
     cudnn.fastest = True
     cudnn.benchmark = True
-    force_input_size = None  # set None to use default size
+    
+    #control print
+    print('2 - Get predictions.')
 
-    #get all unlabeled images
-    original_names = os.listdir(root_dir_testing)
-    img_path = [root_dir_testing + '/' + i for i in original_names]
-    
-    
+    #GET predictions -> prepare the model
     # tf bilinear interpolation is different from any other's, just make do
     input_sizes = [512, 640, 768, 896, 1024, 1280, 1280, 1536]
-    input_size = input_sizes[opt.compound_coef] if force_input_size is None else force_input_size
-    #----------------------------------------------------
-
-
-    # Preprocess all images and stack them
-    #----------------------------------------------------
-    ori_imgs, framed_imgs, framed_metas = preprocess_all(img_path, max_size=input_size)  
-
+    input_size = input_sizes[compound_coef] if force_input_size is None else force_input_size
+    ori_imgs, framed_imgs, framed_metas = preprocess_all(img_path_unlabeled, max_size=input_size)
+    
     if use_cuda:
         x = torch.stack([torch.from_numpy(fi).cuda() for fi in framed_imgs], 0)
     else:
         x = torch.stack([torch.from_numpy(fi) for fi in framed_imgs], 0)
     
     x = x.to(torch.float32 if not use_float16 else torch.float16).permute(0, 3, 1, 2)
-    #----------------------------------------------------
-
-
-    # Instance model and get predictions
-    #----------------------------------------------------
-    model = EfficientDetBackbone(compound_coef = opt.compound_coef, 
-                                 num_classes = len(obj_list),
-                                 ratios = eval(params.anchors_ratios),
-                                 scales = eval(params.anchors_scales))
     
-    model.load_state_dict(torch.load(f'logs/{params.project_name}/efficientdet-d4_trained_weights_semi.pth'))
-    model.requires_grad_(False) # disable learning
-    model.eval() # double check - disable learning
+    model = EfficientDetBackbone(compound_coef=compound_coef, 
+                                 num_classes=len(obj_list),
+                                 ratios=ratios_,
+                                 scales=scales_)
+    
+    model.load_state_dict(torch.load(weights_))
+    model.requires_grad_(False)
+    model.eval()
     
     if use_cuda:
         model = model.cuda()
     if use_float16:
         model = model.half()
     
-    #get predictions
+    #GET predictions -> run predictions
     with torch.no_grad():
         features, regression, classification, anchors = model(x)
     
@@ -476,37 +522,101 @@ def generate_pseudolabels(opt):
                                   anchors, regression, classification,
                                   regressBoxes, clipBoxes,
                                   threshold, iou_threshold)
-    
     out = invert_affine(framed_metas, out)
-    #----------------------------------------------------
-
-
-    # Thresholding and saving images
-    #----------------------------------------------------
-    from PIL import Image
-    import PIL
-        
-    for i in range(len(ori_imgs)):
-        print(len(ori_imgs))
-        if len(out[i]['rois']) == 0:
-            continue
     
-        for j in range(len(out[i]['rois'])):
-            (x1, y1, x2, y2) = out[i]['rois'][j].astype(np.int)
-            cv2.rectangle(ori_imgs[i], (x1, y1), (x2, y2), (255, 255, 0), 2)
-            obj = obj_list[out[i]['class_ids'][j]]
-            score = float(out[i]['scores'][j])
-    
-            cv2.putText(ori_imgs[i], '{}, {:.3f}'.format(obj, score),
-                        (x1, y1 + 10), cv2.FONT_HERSHEY_SIMPLEX, 0.5,
-                        (255, 255, 0), 1)
+
+    #Save images and new ground truth    
+    #Get json to insert new images and new values
+    with open(root_dir_orig_json, "r") as read_file:
+        orig_json = json.load(read_file)
+        new_json = copy.deepcopy(orig_json)
+        update_json_file = False
+
+        #control print
+        print('3 - Keep prediction only above a threshold.')
+
+        #Iter over ALL unlabeled images
+        for i in range(len(ori_imgs)):
+            #do nothing if there are no rois
+            if len(out[i]['rois']) == 0:
+                continue
             
-            #print(type(ori_imgs[i]))
-            #print(ori_imgs[i].shape)
-            #print(ori_imgs[i][0])
-            image_ = Image.fromarray(np.uint8(ori_imgs[i]), 'RGB')
-        image_.save(destination_dir_images + original_names[i])   
-    #----------------------------------------------------
+            #Get a temporal JSON with the current image already inserted
+            temporal_json = copy.deepcopy(new_json)
+            temporal_json, image_dict = get_image_json(json_=temporal_json, img_name=original_names_unlabeled[i])
+            update_current = False
+
+            for j in range(len(out[i]['rois'])):
+
+                #Include new values as Ground Truth
+                if out[i]['scores'][j] >= label_confidence:
+                    #Get coordinates
+                    (x1, y1, x2, y2) = out[i]['rois'][j].astype(int)
+
+                    #Original code to save image
+                    #---------------------------
+                    cv2.rectangle(ori_imgs[i], (x1, y1), (x2, y2), (255, 255, 0), 2)
+                    obj = obj_list[out[i]['class_ids'][j]]
+                    score = float(out[i]['scores'][j])
+            
+                    cv2.putText(ori_imgs[i], '{}, {:.3f}'.format(obj, score),
+                                (x1, y1 + 10), cv2.FONT_HERSHEY_SIMPLEX, 0.5,
+                                (255, 255, 0), 1)
+                    #---------------------------
+
+                    #flag to indicate that we need to update the json with new ground truth
+                    update_current = True
+                    update_json_file = True
+                    
+                    #when loading categories this line is executed --> annotation[0, 4] = a['category_id'] - 1
+                    #So, to save categories we have to do
+                    category = int(out[i]['class_ids'][j] + 1)
+
+                    #caculate width and height
+                    width = x2 - x1
+                    height = y2 - y1
+
+                    #add bbox
+                    temporal_json = insert_bbox(temporal_json, [float(x1), float(y1), float(width), float(height)], image_dict["id"], category)
+            
+            if update_current:
+                new_json = copy.deepcopy(temporal_json)
+            
+                #save image with all detected bboxes
+                image_ = Image.fromarray(np.uint8(ori_imgs[i]), 'RGB')
+                image_.save(destination_dir_images_annotated + original_names_unlabeled[i])
+
+                #copy image to labeled images
+                current_img = cv2.imread(root_dir_images_unlabeled + '/' + original_names_unlabeled[i])
+                cv2.imwrite(destination_labeled + original_names_unlabeled[i], current_img) 
+            #break
+
+    #control print
+    print('4 - Save new JSON.')
+    #save new json file
+    if update_json_file:
+        with open(new_json_path, 'w') as json_file:
+            json.dump(new_json, json_file)
+
+    print('5 - Done.')#'''
+
+
+def measure_performance(opt, iteration, nms_threshold, confidence_threshold):
+    #------------------------------------------------------------------------------------------------------------------------------    
+    project_name = opt.project
+    weights_path = weights_ = f'logs/{opt.project}_{str(iteration)}/efficientdet-d4_trained_weights_semi.pth'
+    compound_coef = opt.compound_coef
+    use_cuda = False#True if torch.cuda.is_available() else False
+    use_float16 = False
+    override_prev_results = True
+    max_detections = 100000
+    #------------------------------------------------------------------------------------------------------------------------------
+
+    run_metrics(compound_coef, nms_threshold, 
+                use_cuda, use_float16, 
+                override_prev_results, project_name, 
+                weights_path, confidence_threshold, 
+                max_detections, iteration)
 
 
 def get_args():
@@ -550,16 +660,18 @@ def throttle_cpu(cpu_list):
         temp.cpu_affinity([i for i in cpu_list])
 
 
-def semisupervised_training(opt):
-    model = main_train(opt)
-
-
-
-
 
 if __name__ == '__main__':
     throttle_cpu([28,29,30,31,32,33,34,35,36,37,38,39]) 
     
     opt = get_args()
-    #semisupervised_training(opt)
-    generate_pseudolabels(opt)
+    nms_threshold = 0.5
+    confidence_threshold = 0.4
+    iterations = 20
+    
+    #for i in list(range(iterations)):
+    #    iteration = i + 1
+    #    main_train(opt, iteration)
+    #    generate_pseudolabels(opt, iteration, 0.95)
+    #    measure_performance(opt, iteration, nms_threshold, confidence_threshold)#'''
+    main_train(opt, 1)
