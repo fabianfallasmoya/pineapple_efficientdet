@@ -13,6 +13,7 @@ import json
 
 from efficientdet.utils import BBoxTransform, ClipBoxes
 from utils.utils import preprocess, preprocess_all, invert_affine, postprocess_original
+from utils.semi_utils import get_image_json, insert_bbox
 
 #LIMIT THE NUMBER OF CPU TO PROCESS THE JOB
 def throttle_cpu(cpu_list):
@@ -24,27 +25,42 @@ def throttle_cpu(cpu_list):
 
 #version para calcular visualize sobre todas las imagenes de un folder
 if(True):
+    #important parameters 
+    iteration = 1
+    project_name = 'apple_semi_annotated'
     throttle_cpu([28,29,30,31,32,33,34,35,36,37,38,39]) 
-    
     compound_coef = 4
     force_input_size = None  # set None to use default size
-    
-    root_dir_testing = 'datasets/apple_semi_annotated/valid'
-    destination_dir_images = root_dir_testing + '_results/'
-    original_names = os.listdir(root_dir_testing)
-    img_path = [root_dir_testing + '/' + i for i in original_names]
-    #print(img_path)
-    
     threshold = 0.4
     iou_threshold = 0.4
+    label_confidence = 0.9
+    obj_list = ['apple']
+    ratios_ = [(1.0, 1.0), (1.4, 0.7), (0.7, 1.4)]
+    scales_ = [2 ** 0, 2 ** (1.0 / 3.0), 2 ** (2.0 / 3.0)]
+    weights_ = 'logs/apple/efficientdet-d4_trained_weights.pth'
+    unlabeled_images_set = 'valid'
     
+    #Get images
+    root_dir_images = f'datasets/{project_name}/{unlabeled_images_set}'
+    original_names = os.listdir(root_dir_images)
+    img_path = [root_dir_images + '/' + i for i in original_names]
+
+    destination_dir_images = f'datasets/{project_name}/{unlabeled_images_set}_{str(iteration)}'
+    if os.path.exists(destination_dir_images):
+        os.mkdir(destination_dir_images)
+
+    #Get original JSON
+    root_dir_orig_json = f'datasets/{project_name}/annotations/instances_{unlabeled_images_set}.json'
+    new_json_path = f'datasets/{project_name}/annotations/instances_{unlabeled_images_set}_{str(iteration)}.json'
+    
+    
+    #Model variables
     use_cuda = False
     use_float16 = False
     cudnn.fastest = True
     cudnn.benchmark = True
     
-    obj_list = ['apple']
-    
+    #GET predictions -> prepare the model
     # tf bilinear interpolation is different from any other's, just make do
     input_sizes = [512, 640, 768, 896, 1024, 1280, 1280, 1536]
     input_size = input_sizes[compound_coef] if force_input_size is None else force_input_size
@@ -57,13 +73,12 @@ if(True):
     
     x = x.to(torch.float32 if not use_float16 else torch.float16).permute(0, 3, 1, 2)
     
-    model = EfficientDetBackbone(compound_coef=compound_coef, num_classes=len(obj_list),
+    model = EfficientDetBackbone(compound_coef=compound_coef, 
+                                 num_classes=len(obj_list),
+                                 ratios=ratios_,
+                                 scales=scales_)
     
-                                 # replace this part with your project's anchor config
-                                 ratios=[(1.0, 1.0), (1.4, 0.7), (0.7, 1.4)],
-                                 scales=[2 ** 0, 2 ** (1.0 / 3.0), 2 ** (2.0 / 3.0)])
-    
-    model.load_state_dict(torch.load('logs/apple/efficientdet-d4_trained_weights.pth'))
+    model.load_state_dict(torch.load(weights_))
     model.requires_grad_(False)
     model.eval()
     
@@ -72,6 +87,7 @@ if(True):
     if use_float16:
         model = model.half()
     
+    #GET predictions -> run predictions
     with torch.no_grad():
         features, regression, classification, anchors = model(x)
     
@@ -82,29 +98,68 @@ if(True):
                                   anchors, regression, classification,
                                   regressBoxes, clipBoxes,
                                   threshold, iou_threshold)
-    
     out = invert_affine(framed_metas, out)
     
+    #Save images and new ground truth
     from PIL import Image
     import PIL
-        
-    for i in range(len(ori_imgs)):
-        print(len(ori_imgs))
-        if len(out[i]['rois']) == 0:
-            continue
     
-        for j in range(len(out[i]['rois'])):
-            (x1, y1, x2, y2) = out[i]['rois'][j].astype(np.int)
-            cv2.rectangle(ori_imgs[i], (x1, y1), (x2, y2), (255, 255, 0), 2)
-            obj = obj_list[out[i]['class_ids'][j]]
-            score = float(out[i]['scores'][j])
-    
-            cv2.putText(ori_imgs[i], '{}, {:.3f}'.format(obj, score),
-                        (x1, y1 + 10), cv2.FONT_HERSHEY_SIMPLEX, 0.5,
-                        (255, 255, 0), 1)
+    #Get json to insert new images and new values
+    with open(root_dir_orig_json, "r") as read_file:
+        orig_json = json.load(read_file)
+        new_json = orig_json
+        update_json_file = False
+
+        #Iter over ALL unlabeled images
+        for i in range(len(ori_imgs)):
+            #do nothing if there are no rois
+            print(len(ori_imgs))
+            if len(out[i]['rois']) == 0:
+                continue
             
-            #print(type(ori_imgs[i]))
-            #print(ori_imgs[i].shape)
-            #print(ori_imgs[i][0])
+            #Get a temporal JSON with the current image already inserted
+            temporal_json, image_dict = get_image_json(new_json, original_names[i])
+            update_current = False
+
+            for j in range(len(out[i]['rois'])):
+
+                #Include new values as Ground Truth
+                if out[i]['scores'][j] >= label_confidence:
+                    #Original code to save image
+                    #---------------------------
+                    (x1, y1, x2, y2) = out[i]['rois'][j].astype(np.int)
+                    cv2.rectangle(ori_imgs[i], (x1, y1), (x2, y2), (255, 255, 0), 2)
+                    obj = obj_list[out[i]['class_ids'][j]]
+                    score = float(out[i]['scores'][j])
+            
+                    cv2.putText(ori_imgs[i], '{}, {:.3f}'.format(obj, score),
+                                (x1, y1 + 10), cv2.FONT_HERSHEY_SIMPLEX, 0.5,
+                                (255, 255, 0), 1)
+                    #---------------------------
+
+                    #flag to indicate that we need to update the json with new ground truth
+                    update_current = True
+                    update_json_file = True
+                    
+                    #when loading categories this line is executed --> annotation[0, 4] = a['category_id'] - 1
+                    #So, to save categories we have to do
+                    category = out[i]['class_ids'][j] + 1
+
+                    #caculate width and height
+                    width = x2 - x1
+                    height = y2 - y1
+
+                    #add bbox
+                    temporal_json = insert_bbox(temporal_json, [x1, y1, width, height], image_dict["id"], category)
+            
+            if update_current:
+                new_json = temporal_json 
+            
+            #save image with all detected bboxes
             image_ = Image.fromarray(np.uint8(ori_imgs[i]), 'RGB')
-        image_.save(destination_dir_images + original_names[i])
+            image_.save(destination_dir_images + original_names[i])
+
+        #save new json file
+        if update_json_file:
+            with open(new_json_path, 'w') as json_file:
+                json.dump(new_json, json_file)
