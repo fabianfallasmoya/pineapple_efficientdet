@@ -1,6 +1,6 @@
 ## EfficientDet Pytorch
 
-The pytorch re-implement of the official [EfficientDet](https://github.com/google/automl/tree/master/efficientdet) with SOTA performance in real time, original paper link: <https://arxiv.org/abs/1911.09070>
+The pytorch re-implement of the official [EfficientDet](https://github.com/google/automl/tree/master/efficientdet) with SOTA performance in real time, original paper link: <https://arxiv.org/abs/1911.09070>. This repository is based on the PyTorch implementation from: https://github.com/zylo117/Yet-Another-EfficientDet-Pytorch
 
 ## Performance
 
