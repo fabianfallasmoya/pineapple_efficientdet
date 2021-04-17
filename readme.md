@@ -31,7 +31,7 @@ The speed/FPS test includes the time of post-processing with no jit/data precisi
      
     # run the simple inference script
     python efficientdet_test.py
-
+ 
 ## Training
 
 ### 1. Prepare your dataset
