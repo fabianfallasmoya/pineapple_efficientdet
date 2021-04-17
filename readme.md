@@ -2,27 +2,6 @@
 
 The pytorch re-implement of the official [EfficientDet](https://github.com/google/automl/tree/master/efficientdet) with SOTA performance in real time, original paper link: <https://arxiv.org/abs/1911.09070>
 
-## Having troubles training? I might train it for you
-
-If you have troubles training a dataset, and if you are willing to share your dataset with the public or it's open already, post it on Issues with `help wanted` tag, I might try to help train it for you, if I'm free, which is not guaranteed.
-
-Requirements:
-
-1. The total number of the image of the dataset should not be larger than 10K, capacity should be under 5GB, and it should be free to download, i.e. baiduyun.
-
-2. The dataset should be in the format of this repo.
-
-3. If you post your dataset in this repo, it is open to the world. So PLEASE DO NOT upload your confidential datasets!
-
-4. If the datasets are against the law or invade one's privacy, feel free to contact me to delete it.
-
-5. Most importantly, you can't demand me to train unless I wanted to.
-
-I'll post the trained weights in this repo along with the evaluation result.
-
-Hope it help whoever wants to try efficientdet in pytorch.
-
-
 ## Performance
 
 ## Pretrained weights and benchmark
@@ -43,7 +22,7 @@ The speed/FPS test includes the time of post-processing with no jit/data precisi
 | D7 | [efficientdet-d7.pth](https://github.com/zylo117/Yet-Another-Efficient-Pytorch/releases/download/1.2/efficientdet-d7.pth) | 3819 | 3.73 | - | 52.7 | 53.7
 | D7X | [efficientdet-d8.pth](https://github.com/zylo117/Yet-Another-Efficient-Pytorch/releases/download/1.2/efficientdet-d8.pth) | 3983 | 2.39 | - | 53.9 | 55.1
 
-## Demo
+## Installation
 
     # install requirements
     pip install pycocotools numpy opencv-python tqdm tensorboard tensorboardX pyyaml webcolors
