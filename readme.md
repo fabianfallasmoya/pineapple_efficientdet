@@ -168,15 +168,7 @@ Check out this [tutorial](tutorial/train_shape.ipynb) if you are new to this. Yo
 
 ## TODO
 
-- [X] re-implement efficientdet
+- [X] re-implement metrics code from Padilla.
 - [X] adapt anchor strategies
-- [X] mAP tests
 - [X] training-scripts
-- [X] efficientdet D6 support
-- [X] efficientdet D7 support
-- [X] efficientdet D7x support
-
-
-## Visual Comparison
-
-Conclusion: They are providing almost the same precision. Tips: set `force_input_size=1920`. Official repo uses original image size while this repo uses default network input size. If you try to compare these two repos, you must make sure the input size is consistent.
+- [X] improve comments
