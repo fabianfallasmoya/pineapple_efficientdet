@@ -34,10 +34,6 @@ The speed/FPS test includes the time of post-processing with no jit/data precisi
 
 ## Training
 
-Training EfficientDet is a painful and time-consuming task. You shouldn't expect to get a good result within a day or two. Please be patient.
-
-Check out this [tutorial](tutorial/train_shape.ipynb) if you are new to this. You can run it on colab with GPU support.
-
 ### 1. Prepare your dataset
 
     # your dataset structure should be like this
@@ -73,9 +69,9 @@ Check out this [tutorial](tutorial/train_shape.ipynb) if you are new to this. Yo
      
     # for example
     project_name: coco
-    train_set: train2017
-    val_set: val2017
-    num_gpus: 4  # 0 means using cpu, 1-N means using gpus 
+    train_set: train
+    val_set: val
+    num_gpus: 1  # 0 means using cpu, 1-N means using gpus 
     
     # mean and std in RGB order, actually this part should remain unchanged as long as your dataset is similar to coco.
     mean: [0.485, 0.456, 0.406]
