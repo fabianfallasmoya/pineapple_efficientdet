@@ -1,8 +1,8 @@
-# Yet Another EfficientDet Pytorch
+# EfficientDet Pytorch
 
-The pytorch re-implement of the official [EfficientDet](https://github.com/google/automl/tree/master/efficientdet) with SOTA performance in real time, original paper link: <https://arxiv.org/abs/1911.09070>
+The pytorch re-implement of the official [EfficientDet](https://github.com/google/automl/tree/master/efficientdet). Original paper link: <https://arxiv.org/abs/1911.09070>
 
-## Having troubles training? I might train it for you
+## Important aspects for running
 
 If you have troubles training a dataset, and if you are willing to share your dataset with the public or it's open already, post it on Issues with `help wanted` tag, I might try to help train it for you, if I'm free, which is not guaranteed.
 
@@ -196,8 +196,3 @@ Check out this [tutorial](tutorial/train_shape.ipynb) if you are new to this. Yo
 - [X] efficientdet D6 support
 - [X] efficientdet D7 support
 - [X] efficientdet D7x support
-
-
-## Visual Comparison
-
-Conclusion: They are providing almost the same precision. Tips: set `force_input_size=1920`. Official repo uses original image size while this repo uses default network input size. If you try to compare these two repos, you must make sure the input size is consistent.
