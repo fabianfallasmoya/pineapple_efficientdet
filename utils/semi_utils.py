@@ -20,8 +20,8 @@ def get_image_json(json_=None, img_name=None):
         temp_dict["width"] = img["width"]
         temp_dict["date_captured"] = img["date_captured"]
         
-        json_["images"].append(temp_dict)  
-    
+        json_["images"].append(temp_dict)
+        
     return json_, temp_dict
 
 
@@ -38,3 +38,4 @@ def insert_bbox(json_file, coordinates, img_id, category_id):
     #append to the json
     json_file["annotations"].append(temp_dict)
     return json_file
+    

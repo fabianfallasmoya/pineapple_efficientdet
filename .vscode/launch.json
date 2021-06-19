@@ -14,8 +14,8 @@
             "request": "launch",
             "program": "${file}",
             "console": "integratedTerminal",
-            "env": { "CUDA_VISIBLE_DEVICES": "1"},
-            "args": ["-c", "4", "-p", "apple_semi_annotated_5", "--lr", "1e-7", "--batch_size", "1", "--load_weights", "weights/efficientdet-d4.pth", "--num_epochs", "500", "--es_patience", "30"]
+            "env": { "CUDA_VISIBLE_DEVICES": "0"},
+            "args": ["-c", "0", "-p", "b_apple_8", "--lr", "1e-6", "--batch_size", "2", "--load_weights", "weights/efficientdet-d0.pth", "--num_epochs", "500", "--es_patience", "30", "--debug", "False"]
         }
     ]
 }

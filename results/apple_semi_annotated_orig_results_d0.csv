@@ -1,0 +1,2 @@
+iterations,groundtruth_num,num_detections,nms_threshold,confidence_threshold,precision,recall,f1_score
+1,81,511,0.5,0.4,0.13670886075949368,0.6666666666666666,0.22689075630252103

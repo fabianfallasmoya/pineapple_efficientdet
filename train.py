@@ -68,17 +68,17 @@ def get_args():
 class ModelWithLoss(nn.Module):
     def __init__(self, model, debug=False):
         super().__init__()
-        self.criterion = FocalLoss()
+        self.criterion = FocalLoss(1)
         self.model = model
         self.debug = debug
 
-    def forward(self, imgs, annotations, obj_list=None):
+    def forward(self, imgs, annotations, img_names, unlabeled_names, obj_list=None):
         _, regression, classification, anchors = self.model(imgs)
         if self.debug:
-            cls_loss, reg_loss = self.criterion(classification, regression, anchors, annotations,
+            cls_loss, reg_loss = self.criterion(classification, regression, anchors, annotations, img_names, unlabeled_names,
                                                 imgs=imgs, obj_list=obj_list)
         else:
-            cls_loss, reg_loss = self.criterion(classification, regression, anchors, annotations)
+            cls_loss, reg_loss = self.criterion(classification, regression, anchors, annotations, img_names, unlabeled_names)
         return cls_loss, reg_loss
 
 
@@ -216,6 +216,7 @@ def train(opt):
                 try:
                     imgs = data['img']
                     annot = data['annot']
+                    img_names = data['img_names']
 
                     if params.num_gpus == 1:
                         # if only one gpu, just send it to cuda:0
@@ -224,7 +225,7 @@ def train(opt):
                         annot = annot.cuda()
 
                     optimizer.zero_grad()
-                    cls_loss, reg_loss = model(imgs, annot, obj_list=params.obj_list)
+                    cls_loss, reg_loss = model(imgs, annot, img_names, [], obj_list=params.obj_list)
                     cls_loss = cls_loss.mean()
                     reg_loss = reg_loss.mean()
 
@@ -275,7 +276,7 @@ def train(opt):
                             imgs = imgs.cuda()
                             annot = annot.cuda()
 
-                        cls_loss, reg_loss = model(imgs, annot, obj_list=params.obj_list)
+                        cls_loss, reg_loss = model(imgs, annot, img_names, [], obj_list=params.obj_list)
                         cls_loss = cls_loss.mean()
                         reg_loss = reg_loss.mean()
 

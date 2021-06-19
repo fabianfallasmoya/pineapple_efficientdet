@@ -46,8 +46,11 @@ class CocoDataset(Dataset):
         img = self.load_image(idx)
         annot = self.load_annotations(idx)
         sample = {'img': img, 'annot': annot}
+        name = self.load_name(idx)
         if self.transform:
             sample = self.transform(sample)
+
+        sample['img_name'] = name
         return sample
 
     def load_image(self, image_index):
@@ -60,6 +63,11 @@ class CocoDataset(Dataset):
         img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
 
         return img.astype(np.float32) / 255.
+
+    def load_name(self, image_index):
+        image_info = self.coco.loadImgs(self.image_ids[image_index])[0]
+        
+        return image_info['file_name']
 
     def load_annotations(self, image_index):
         # get ground truth annotations
@@ -94,6 +102,7 @@ def collater(data):
     imgs = [s['img'] for s in data]
     annots = [s['annot'] for s in data]
     scales = [s['scale'] for s in data]
+    img_names = [s['img_name'] for s in data]
 
     imgs = torch.from_numpy(np.stack(imgs, axis=0))
 
@@ -111,7 +120,7 @@ def collater(data):
 
     imgs = imgs.permute(0, 3, 1, 2)
 
-    return {'img': imgs, 'annot': annot_padded, 'scale': scales}
+    return {'img': imgs, 'annot': annot_padded, 'scale': scales, 'img_names': img_names}
 
 
 class Resizer(object):

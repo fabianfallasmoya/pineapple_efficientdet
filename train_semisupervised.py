@@ -43,19 +43,19 @@ class Params:
 
 
 class ModelWithLoss(nn.Module):
-    def __init__(self, model, debug=False):
+    def __init__(self, model, debug=False, version=1):
         super().__init__()
-        self.criterion = FocalLoss()
+        self.criterion = FocalLoss(version)
         self.model = model
         self.debug = debug
 
-    def forward(self, imgs, annotations, obj_list=None):
+    def forward(self, imgs, annotations, img_names, unlabeled_names, obj_list=None):
         _, regression, classification, anchors = self.model(imgs)
         if self.debug:
-            cls_loss, reg_loss = self.criterion(classification, regression, anchors, annotations,
-                                                imgs=imgs, obj_list=obj_list)
+            cls_loss, reg_loss = self.criterion(classification, regression, anchors, annotations, img_names, unlabeled_names, 
+                                                imgs=imgs, obj_list=obj_list) 
         else:
-            cls_loss, reg_loss = self.criterion(classification, regression, anchors, annotations)
+            cls_loss, reg_loss = self.criterion(classification, regression, anchors, annotations, img_names, unlabeled_names)
         return cls_loss, reg_loss
 
 
@@ -69,7 +69,7 @@ def save_checkpoint(model, name, path_to_save_weights):
 
 
 
-def main_train(opt, iteration):
+def main_train(opt, iteration, version):
 
     # Load general parameter from the model
     #----------------------------------------------------
@@ -89,7 +89,7 @@ def main_train(opt, iteration):
     os.makedirs(path_to_save_weights, exist_ok=True)
 
     training_params = {'batch_size': opt.batch_size,
-                       'shuffle': False,
+                       'shuffle': True,
                        'drop_last': True,
                        'collate_fn': collater,
                        'num_workers': opt.num_workers}
@@ -169,6 +169,12 @@ def main_train(opt, iteration):
         print('[Info] freezed backbone')
     '''
 
+    # Get image names
+    #----------------------------------------------------
+    unlabeled_images_set = params.train_set_unlabeled 
+    root_dir_images_unlabeled = f'datasets/{params.project_name}/{unlabeled_images_set}'
+    unlabeled_names = os.listdir(root_dir_images_unlabeled)
+
 
     # Set a batch normalization option when using multiple GPU's
     #----------------------------------------------------
@@ -189,7 +195,7 @@ def main_train(opt, iteration):
     # Include on top of the model the loss function - Focal loss
     # This way to reduce the memory usage on gpu0 and speedup
     #----------------------------------------------------
-    model = ModelWithLoss(model, debug=opt.debug)
+    model = ModelWithLoss(model, debug=opt.debug, version=version)
 
     if params.num_gpus > 0:
         model = model.cuda()
@@ -253,6 +259,7 @@ def main_train(opt, iteration):
                     #----------
                     imgs = data['img']
                     annot = data['annot']
+                    img_names = data['img_names']
 
                     if params.num_gpus == 1:
                         # if only one gpu, just send it to cuda:0
@@ -265,7 +272,7 @@ def main_train(opt, iteration):
                     # Calculate the loss
                     #----------
                     optimizer.zero_grad()
-                    cls_loss, reg_loss = model(imgs, annot, obj_list=params.obj_list)
+                    cls_loss, reg_loss = model(imgs, annot, img_names, unlabeled_names, obj_list=params.obj_list)
                     cls_loss = cls_loss.mean()
                     reg_loss = reg_loss.mean()
 
@@ -348,12 +355,13 @@ def main_train(opt, iteration):
                     with torch.no_grad():
                         imgs = data['img']
                         annot = data['annot']
+                        img_names = data['img_names']
 
                         if params.num_gpus == 1:
                             imgs = imgs.cuda()
                             annot = annot.cuda()
 
-                        cls_loss, reg_loss = model(imgs, annot, obj_list=params.obj_list)
+                        cls_loss, reg_loss = model(imgs, annot, img_names, unlabeled_names, obj_list=params.obj_list)
                         cls_loss = cls_loss.mean()
                         reg_loss = reg_loss.mean()
 
@@ -445,8 +453,9 @@ def generate_pseudolabels(opt, iteration, label_confidence):
 
     ratios_ = eval(params.anchors_ratios)#[(1.0, 1.0), (1.4, 0.7), (0.7, 1.4)]
     scales_ = eval(params.anchors_scales)#[2 ** 0, 2 ** (1.0 / 3.0), 2 ** (2.0 / 3.0)]
-    weights_ = f'logs/apple_semi_annotated_{str(iteration)}/efficientdet-d4_trained_weights_semi.pth'
+    #weights_ = f'logs/apple_semi_annotated_{str(iteration)}/efficientdet-d4_trained_weights_semi.pth'
     #weights_ = f'logs/apple_semi_annotated/efficientdet-d4_trained_weights.pth'
+    weights_ = f'logs/{opt.project}_{str(iteration)}/efficientdet-d{opt.compound_coef}_trained_weights_semi.pth'
     unlabeled_images_set = params.train_set_unlabeled #'valid'
     labeled_images_set = params.train_set #'train'
     
@@ -513,7 +522,21 @@ def generate_pseudolabels(opt, iteration, label_confidence):
     
     #GET predictions -> run predictions
     with torch.no_grad():
-        features, regression, classification, anchors = model(x)
+        for i in range(int(x.shape[0])+1):
+            try:
+                _, r, c, a = model(x[i:i+1])
+            
+                if i == 0:
+                    regression = r
+                    classification = c
+                    anchors = a
+                else:
+                    regression = torch.cat([regression, r], dim=0)
+                    classification = torch.cat([classification, c], dim=0)
+                    anchors = torch.cat([anchors, a], dim=0)
+                #print(i)
+            except RuntimeError as e:
+                print("Error using this image")
     
         regressBoxes = BBoxTransform()
         clipBoxes = ClipBoxes()
@@ -597,6 +620,10 @@ def generate_pseudolabels(opt, iteration, label_confidence):
     if update_json_file:
         with open(new_json_path, 'w') as json_file:
             json.dump(new_json, json_file)
+    else:
+        with open(new_json_path, 'w') as json_file:
+            json.dump(orig_json, json_file)
+
 
     print('5 - Done.')#'''
 
@@ -604,7 +631,7 @@ def generate_pseudolabels(opt, iteration, label_confidence):
 def measure_performance(opt, iteration, nms_threshold, confidence_threshold):
     #------------------------------------------------------------------------------------------------------------------------------    
     project_name = opt.project
-    weights_path = weights_ = f'logs/{opt.project}_{str(iteration)}/efficientdet-d4_trained_weights_semi.pth'
+    weights_path = weights_ = f'logs/{opt.project}_{str(iteration)}/efficientdet-d{opt.compound_coef}_trained_weights_semi.pth'
     compound_coef = opt.compound_coef
     use_cuda = False#True if torch.cuda.is_available() else False
     use_float16 = False
@@ -667,11 +694,14 @@ if __name__ == '__main__':
     opt = get_args()
     nms_threshold = 0.5
     confidence_threshold = 0.4
-    iterations = 20
+    iterations = 5
+    version = 1
     
-    #for i in list(range(iterations)):
-    #    iteration = i + 1
-    #    main_train(opt, iteration)
-    #    generate_pseudolabels(opt, iteration, 0.95)
-    #    measure_performance(opt, iteration, nms_threshold, confidence_threshold)#'''
-    main_train(opt, 1)
+    
+    for i in list(range(iterations)):
+        iteration = i + 1
+        main_train(opt, iteration, version)
+        generate_pseudolabels(opt, iteration, 0.95)
+        measure_performance(opt, iteration, nms_threshold, confidence_threshold)#'''
+        #break
+    #generate_pseudolabels(opt, 1, 0.95)

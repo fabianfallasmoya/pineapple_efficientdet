@@ -1,6 +1,7 @@
-project_name: pineapple_88_4mts_train_val_test  # also the folder name of the dataset that under data_path folder
+project_name: apple_semi_annotated_50  # also the folder name of the dataset that under data_path folder 
 train_set: train
-val_set: valid
+train_set_unlabeled: valid
+val_set: test
 test_set: test
 num_gpus: 1
 
@@ -12,4 +13,4 @@ std: [0.229, 0.224, 0.225]
 anchors_scales: '[2 ** 0, 2 ** (1.0 / 3.0), 2 ** (2.0 / 3.0)]'
 anchors_ratios: '[(1.0, 1.0), (1.4, 0.7), (0.7, 1.4)]'
 
-obj_list: ['pineapple']
+obj_list: ['apple']

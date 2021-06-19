@@ -164,7 +164,7 @@ def run_metrics(compound_coef, nms_threshold, use_cuda, use_float16, override_pr
     else:
         VAL_GT = f'datasets/{params["project_name"]}/annotations/instances_{SET_NAME}.json'
         VAL_IMGS = f'datasets/{params["project_name"]}/{SET_NAME}/'
-    MAX_IMAGES = 10000
+    MAX_IMAGES = 1000
     coco_gt = COCO(VAL_GT)
     image_ids = coco_gt.getImgIds()[:MAX_IMAGES]
     
@@ -255,16 +255,16 @@ if __name__ == '__main__':
     throttle_cpu([28,29,30,31,32,33,34,35,36,37,38,39])
     
     #------------------------------------------------------------------------------------------------------------------------------    
-    project_name = "apple"
-    weights_path = "logs/apple/efficientdet-d4_trained_weights.pth"
-    compound_coef = 4
-    nms_threshold = 0.4
+    project_name = "apple_semi_annotated_orig"
+    weights_path = "logs/apple_semi_annotated_orig/efficientdet-d0_trained_weights.pth"
+    compound_coef = 0
+    nms_threshold = 0.5
     use_cuda = True
     use_float16 = False
     override_prev_results = True
     confidence_threshold = 0.4
-    max_detections = 100000
-    iteration = 2
+    max_detections = 10000
+    iteration = 1
     #------------------------------------------------------------------------------------------------------------------------------
     
     run_metrics(compound_coef, nms_threshold, 

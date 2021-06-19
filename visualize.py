@@ -16,14 +16,14 @@ from utils.utils import preprocess_all, invert_affine, postprocess_original
 compound_coef = 4
 force_input_size = None  # set None to use default size
 
-root = 'datasets/apple_semi_annotated_orig'
-root_dir_testing = root + '/test'
-destination_dir_images = root + '/predictions/'
+root = 'datasets/apple_semi_annotated_5'
+root_dir_testing = root + '/valid'
+destination_dir_images = root + '/train_semi/'
 original_names = os.listdir(root_dir_testing)
 img_path = [root_dir_testing+'/'+i for i in original_names]
 print(img_path)
 
-threshold = 0.4
+threshold = 0.9
 iou_threshold = 0.5
 
 use_cuda = True
@@ -51,8 +51,8 @@ model = EfficientDetBackbone(compound_coef=compound_coef, num_classes=len(obj_li
                              ratios=[(1.0, 1.0), (1.4, 0.7), (0.7, 1.4)],
                              scales=[2 ** 0, 2 ** (1.0 / 3.0), 2 ** (2.0 / 3.0)])
 
-#model.load_state_dict(torch.load('logs/apple_semi_annotated_5_1/efficientdet-d4_trained_weights_semi.pth'))
-model.load_state_dict(torch.load('logs/apple_semi_annotated_orig/efficientdet-d4_trained_weights.pth'))
+model.load_state_dict(torch.load('logs/apple_semi_annotated_5_1/efficientdet-d4_trained_weights_semi.pth'))
+#model.load_state_dict(torch.load('logs/apple_semi_annotated_orig/efficientdet-d4_trained_weights.pth'))
 #model.load_state_dict(torch.load('logs/apple_semi_annotated_orig/efficientdet-d4_trained_weights.pth'))
 #model.load_state_dict(torch.load('logs/apple/efficientdet-d4_trained_weights.pth'))
 model.requires_grad_(False)

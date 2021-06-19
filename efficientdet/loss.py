@@ -25,10 +25,11 @@ def calc_iou(a, b):
 
 
 class FocalLoss(nn.Module):
-    def __init__(self):
+    def __init__(self, version):
         super(FocalLoss, self).__init__()
+        self.version = version
 
-    def forward(self, classifications, regressions, anchors, annotations, **kwargs):
+    def forward(self, classifications, regressions, anchors, annotations, img_names, unlabeled_names, **kwargs):
         alpha = 0.25
         gamma = 2.0
         batch_size = classifications.shape[0]
@@ -44,6 +45,17 @@ class FocalLoss(nn.Module):
         anchor_ctr_y = anchor[:, 0] + 0.5 * anchor_heights
 
         for j in range(batch_size):
+            
+            # Indicate if the image is unlabeled
+            #--------------------------------------------------
+            unlabeled_sample = False
+
+            #ask if the array unlabeled_names is from the semi-supervised code
+            if len(unlabeled_names) > 0:
+                if img_names[j] in unlabeled_names:
+                    unlabeled_sample = True
+            #--------------------------------------------------
+
 
             classification = classifications[j, :, :]
             regression = regressions[j, :, :]
@@ -82,7 +94,8 @@ class FocalLoss(nn.Module):
                     regression_losses.append(torch.tensor(0).to(dtype))
                     classification_losses.append(cls_loss.sum())
 
-                continue
+                #continue
+                break
                 
             IoU = calc_iou(anchor[:, :], bbox_annotation[:, :4])
 
@@ -93,12 +106,27 @@ class FocalLoss(nn.Module):
             if torch.cuda.is_available():
                 targets = targets.cuda()
 
-            targets[torch.lt(IoU_max, 0.4), :] = 0
 
+            # If this is an unlabeled example, considered just the high confident examples
+            #--------------------------------------------------
+            if unlabeled_sample == False:
+                targets[torch.lt(IoU_max, 0.4), :] = 0
+            else:
+                if self.version == 1:
+                    #keep same negative samples as in the annotated images
+                    targets[torch.lt(IoU_max, 0.4), :] = 0
+                elif self.version == 2:
+                    #keep only possitive samples
+                    pass
+                elif self.version == 3:
+                    #keep some possitive and some negative samples
+                    targets[torch.lt(IoU_max, 0.05), :] = 0
+            #--------------------------------------------------
+
+
+            #set positive samples
             positive_indices = torch.ge(IoU_max, 0.5)
-
             num_positive_anchors = positive_indices.sum()
-
             assigned_annotations = bbox_annotation[IoU_argmax, :]
 
             targets[positive_indices, :] = 0
