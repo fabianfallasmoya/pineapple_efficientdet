@@ -11,13 +11,15 @@ from matplotlib import colors
 from backbone import EfficientDetBackbone
 import cv2
 import numpy as np
+import os
 
 from efficientdet.utils import BBoxTransform, ClipBoxes
-from utils.utils import preprocess, invert_affine, postprocess, STANDARD_COLORS, standard_to_bgr, get_index_label, plot_one_box
+from utils.utils import preprocess, invert_affine, postprocess, CustomDataParallel, STANDARD_COLORS, standard_to_bgr, get_index_label, plot_one_box
 
 compound_coef = 4
 force_input_size = None  # set None to use default size
-img_path = 'test/15mts.jpg'
+img_path = 'test/whiteImage.jpg'
+#img_path = 'test/unknown.jpg'
 
 # replace this part with your project's anchor config
 anchor_ratios = [(1.0, 1.0), (1.4, 0.7), (0.7, 1.4)]
@@ -61,7 +63,14 @@ x = x.to(torch.float32 if not use_float16 else torch.float16).permute(0, 3, 1, 2
 model = EfficientDetBackbone(compound_coef=compound_coef, num_classes=len(obj_list),
                              ratios=anchor_ratios, scales=anchor_scales)
 #model.load_state_dict(torch.load(f'weights/efficientdet-d{compound_coef}.pth', map_location='cpu'))
-model.load_state_dict(torch.load(f'weights/efficientdet-d4_15mts.pth', map_location='cpu'))#
+model.load_state_dict(torch.load(f'weights/efficientdet-d4_trained_weights.pth', map_location='cpu'))
+
+"""
+model.bifpn.load_state_dict(torch.load(f'test/efficientdet-d4-trained-bifpn-weights.pth', map_location='cpu'))
+model.regressor.load_state_dict(torch.load(f'test/efficientdet-d4-trained-regressor-weights.pth', map_location='cpu'))
+model.classifier.load_state_dict(torch.load(f'test/efficientdet-d4-trained-classifier-weights.pth', map_location='cpu'))
+model.backbone_net.load_state_dict(torch.load(f'test/efficientdet-d4-trained-backbone_net-weights.pth', map_location='cpu'))
+"""
 model.requires_grad_(False)
 model.eval()
 
@@ -75,7 +84,7 @@ with torch.no_grad():
 
     regressBoxes = BBoxTransform()
     clipBoxes = ClipBoxes()
-
+    
     out, pyramid_count = postprocess(x,
                       anchors, regression, classification,
                       regressBoxes, clipBoxes,
@@ -103,11 +112,22 @@ def display(preds, imgs, imshow=True, imwrite=False):
         if imwrite:
             cv2.imwrite(f'test/img_inferred_d{compound_coef}_this_repo_{i}.jpg', imgs[i])
 
+def save_checkpoint(model, name):
+    if isinstance(model, CustomDataParallel):
+        torch.save(model.module.model.state_dict(), os.path.join('test/', 'weightsInstance'))
+    else:
+        #torch.save(model.model.state_dict(), os.path.join('test/', name))
+        torch.save(model.bifpn.state_dict(), os.path.join('test/', f'{name}-bifpn-weights.pth')) #saving bifpn weights
+        torch.save(model.regressor.state_dict(), os.path.join('test/', f'{name}-regressor-weights.pth'))# saving regressor weights
+        torch.save(model.classifier.state_dict(), os.path.join('test/', f'{name}-classifier-weights.pth'))# saving classifier weights
+        torch.save(model.backbone_net.state_dict(), os.path.join('test/', f'{name}-backbone_net-weights.pth'))# saving backbone_net weights
+
 
 out = invert_affine(framed_metas, out)
 display(out, ori_imgs, imshow=False, imwrite=True)
 print("Pyramid count: ")
 print(pyramid_count)
+#save_checkpoint(model,f'efficientdet-d{compound_coef}-trained')
 print('done!')
 
 '''

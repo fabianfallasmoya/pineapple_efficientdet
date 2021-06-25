@@ -419,21 +419,40 @@ class Classifier(nn.Module):
         feats = []
         for feat, bn_list in zip(inputs, self.bn_list):
             for i, bn, conv in zip(range(self.num_layers), bn_list, self.conv_list):
+                #print('line 423 below')
+                #print(feat.shape) 
                 feat = conv(feat)
                 feat = bn(feat)
                 feat = self.swish(feat)
+                #print('line 428 below')
+                #print(feat.shape)
+            #print('#################### finished SECOND for ####################')   
+            #print('line 431 below')
+            #print(feat.shape)
             feat = self.header(feat)
-
+            #print('line 434 below')
+            #print(feat.shape)## torch.Size([1, 9, 128, 128]),torch.Size([1, 9, 64, 64])
             feat = feat.permute(0, 2, 3, 1)
+            #print('line 437 below')
+            #print(feat.shape)##torch.Size([1, 128, 128, 9]),torch.Size([1, 64, 64, 9])
             feat = feat.contiguous().view(feat.shape[0], feat.shape[1], feat.shape[2], self.num_anchors,
                                           self.num_classes)
+            #print('line 441 below')
+            #print(feat.shape)#torch.Size([1, 128, 128, 9, 1])
             feat = feat.contiguous().view(feat.shape[0], -1, self.num_classes)
-
+            #print('line 444 below')
+            #print(feat.shape)#torch.Size([1, 147456, 1])
             feats.append(feat)
-
+        #print('#################### finished FIRST for ####################')
+        #print('line 448 below')
+        #print(type(feats))
+        #print(len(feats))
         feats = torch.cat(feats, dim=1)
+        #print('line 451 below')
+        #print(type(feats))
+        #print(len(feats))
         feats = feats.sigmoid()
-
+        #print('#################### debugging finished ####################')
         return feats
 
 
