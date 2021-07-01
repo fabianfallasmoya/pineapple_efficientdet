@@ -413,7 +413,10 @@ if __name__ == '__main__':
             groundTruth, detected, pyramid, filtered_num = generateFiles(args.confidence_threshold, pyramid_filter, True)
         else:
             groundTruth, detected, pyramid, filtered_num = generateFiles(args.confidence_threshold, None, False)
+        
+        os.chdir(rootDir+'/Object-Detection-Metrics')
         generateResults(args.confidence_threshold)
+        os.chdir(rootDir)
 
         dataset, ap, precision, recall, f1Score = collectRsultsFromFiles(args.confidence_threshold)
         print('##############################################')
@@ -439,6 +442,7 @@ if __name__ == '__main__':
         #plt.show()
         shutil.rmtree(dirForGroundTruthAndDetections + '/' + project + '/' + str(args.confidence_threshold) + '/groundtruths')
         shutil.rmtree(dirForGroundTruthAndDetections + '/' + project + '/' + str(args.confidence_threshold) + '/detections')
+        shutil.rmtree(dirForGroundTruthAndDetections + '/' + project + '/' + str(args.confidence_threshold) + '/results')
     else:
         confidence_threshold = 0.2
         hop = 0.05
