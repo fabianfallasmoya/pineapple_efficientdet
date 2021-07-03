@@ -18,8 +18,8 @@ from utils.utils import preprocess, invert_affine, postprocess, CustomDataParall
 
 compound_coef = 4
 force_input_size = None  # set None to use default size
-img_path = 'test/whiteImage.jpg'
-#img_path = 'test/unknown.jpg'
+#img_path = 'test/whiteImage.jpg'
+img_path = 'test/unknown.jpg'
 
 # replace this part with your project's anchor config
 anchor_ratios = [(1.0, 1.0), (1.4, 0.7), (0.7, 1.4)]
@@ -85,7 +85,7 @@ with torch.no_grad():
     regressBoxes = BBoxTransform()
     clipBoxes = ClipBoxes()
     
-    out, pyramid_count = postprocess(x,
+    out, pyramid_count,na = postprocess(x,
                       anchors, regression, classification,
                       regressBoxes, clipBoxes,
                       threshold, iou_threshold,
