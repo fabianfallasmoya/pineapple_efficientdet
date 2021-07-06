@@ -1,11 +1,11 @@
 # original author: signatrix
 # adapted from https://github.com/signatrix/efficientdet/blob/master/train.py
-# modified by Zylo117
 
 import argparse
 import datetime
 import os
 import traceback
+import psutil
 
 import numpy as np
 import torch
@@ -64,6 +64,7 @@ def get_args():
     return args
 
 
+
 class ModelWithLoss(nn.Module):
     def __init__(self, model, debug=False):
         super().__init__()
@@ -109,7 +110,7 @@ def train(opt):
                   'collate_fn': collater,
                   'num_workers': opt.num_workers}
 
-    input_sizes = [512, 640, 768, 896, 1024, 1280, 1280, 1536, 1536]
+    input_sizes = [512, 640, 768, 896, 1024, 1280, 1280, 1536, 1356]
     training_set = CocoDataset(root_dir=os.path.join(opt.data_path, params.project_name), set=params.train_set,
                                transform=transforms.Compose([Normalizer(mean=params.mean, std=params.std),
                                                              Augmenter(),
@@ -173,7 +174,7 @@ def train(opt):
     else:
         use_sync_bn = False
 
-    writer = SummaryWriter(opt.log_path + f'/{datetime.datetime.now().strftime("%Y%m%d-%H%M%S")}/')
+    
 
     # warp the model with loss function, to reduce the memory usage on gpu0 and speedup
     model = ModelWithLoss(model, debug=opt.debug)
@@ -197,9 +198,9 @@ def train(opt):
     best_epoch = 0
     step = max(0, last_step)
     model.train()
-
     num_iter_per_epoch = len(training_generator)
 
+    writer = SummaryWriter(opt.log_path + f'/{datetime.datetime.now().strftime("%Y%m%d-%H%M%S")}/')
     try:
         for epoch in range(opt.num_epochs):
             last_epoch = step // num_iter_per_epoch
@@ -252,7 +253,7 @@ def train(opt):
                     step += 1
 
                     if step % opt.save_interval == 0 and step > 0:
-                        save_checkpoint(model, f'efficientdet-d{opt.compound_coef}_{epoch}_{step}')
+                        #save_checkpoint(model, f'efficientdet-d{opt.compound_coef}_{epoch}_{step}.pth')
                         print('checkpoint...')
 
                 except Exception as e:
@@ -300,7 +301,10 @@ def train(opt):
                     best_loss = loss
                     best_epoch = epoch
 
-                    save_checkpoint(model, f'efficientdet-d{opt.compound_coef}_{epoch}_{step}')
+                    save_checkpoint(model, f'efficientdet-d{opt.compound_coef}_trained_weights.pth')
+                    with open(os.path.join(opt.saved_path, f"best_epoch-d{opt.compound_coef}.txt"), "a") as my_file: 
+                        my_file.write(f"Epoch:{epoch} / Step: {step} / Loss: {best_loss}\n") 
+
 
                 model.train()
 
@@ -309,26 +313,28 @@ def train(opt):
                     print('[Info] Stop training at epoch {}. The lowest loss achieved is {}'.format(epoch, best_loss))
                     break
     except KeyboardInterrupt:
-        save_checkpoint(model, f'efficientdet-d{opt.compound_coef}_{epoch}_{step}')
+        save_checkpoint(model, f'efficientdet-d{opt.compound_coef}_{epoch}_{step}.pth')
         writer.close()
     writer.close()
 
 
 def save_checkpoint(model, name):
     if isinstance(model, CustomDataParallel):
-        #torch.save(model.module.model.state_dict(), os.path.join(opt.saved_path, name))
-        torch.save(model.module.model.bifpn.state_dict(), os.path.join(opt.saved_path, f'{name}-bifpn-weights.pth')) #saving bifpn weights
-        torch.save(model.module.model.regressor.state_dict(), os.path.join(opt.saved_path, f'{name}-regressor-weights.pth'))# saving regressor weights
-        torch.save(model.module.model.classifier.state_dict(), os.path.join(opt.saved_path, f'{name}-classifier-weights.pth'))# saving classifier weights
-        torch.save(model.module.model.backbone_net.state_dict(), os.path.join(opt.saved_path, f'{name}-backbone_net-weights.pth'))# saving backbone_net weights
+        torch.save(model.module.model.state_dict(), os.path.join(opt.saved_path, name))
     else:
-        #torch.save(model.model.state_dict(), os.path.join(opt.saved_path, name))
-        torch.save(model.model.bifpn.state_dict(), os.path.join(opt.saved_path, f'{name}-bifpn-weights.pth')) #saving bifpn weights
-        torch.save(model.model.regressor.state_dict(), os.path.join(opt.saved_path, f'{name}-regressor-weights.pth'))# saving regressor weights
-        torch.save(model.model.classifier.state_dict(), os.path.join(opt.saved_path, f'{name}-classifier-weights.pth'))# saving classifier weights
-        torch.save(model.model.backbone_net.state_dict(), os.path.join(opt.saved_path, f'{name}-backbone_net-weights.pth'))# saving backbone_net weights
+        torch.save(model.model.state_dict(), os.path.join(opt.saved_path, name))
+
+
+#LIMIT THE NUMBER OF CPU TO PROCESS THE JOB
+def throttle_cpu(cpu_list):
+    p = psutil.Process()
+    for i in p.threads():
+        temp = psutil.Process(i.id)
+        temp.cpu_affinity([i for i in cpu_list])
 
 
 if __name__ == '__main__':
+    #throttle_cpu([28,29,30,31,32,33,34,35,36,37,38,39]) 
+
     opt = get_args()
     train(opt)
