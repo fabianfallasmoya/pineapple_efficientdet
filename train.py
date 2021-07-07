@@ -110,7 +110,8 @@ def train(opt):
                   'collate_fn': collater,
                   'num_workers': opt.num_workers}
 
-    input_sizes = [512, 640, 768, 896, 1024, 1280, 1280, 1536, 1356]
+    #input_sizes = [512, 640, 768, 896, 1024, 1280, 1280, 1536, 1356] # these are the standard sizes
+    input_sizes = [1300, 1300, 1300, 1300, 1300, 1300, 1300, 1300, 1300] # the experimental sizes
     training_set = CocoDataset(root_dir=os.path.join(opt.data_path, params.project_name), set=params.train_set,
                                transform=transforms.Compose([Normalizer(mean=params.mean, std=params.std),
                                                              Augmenter(),
